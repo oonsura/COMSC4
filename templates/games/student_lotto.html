@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}ผลการสุ่ม ID LOTTO - COMSC4{% endblock %}
+{% block page_header %}ระบบสุ่ม ID LOTTO{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-dice-6-fill text-warning me-2"></i>ผลการสุ่มผู้โชคดีล่าสุด: {{ current_session.title|default:"ID LOTTO" }}</span>
+        <span class="badge bg-warning text-dark">อัปเดตอัตโนมัติ</span>
+      </div>
+      <div class="card-body">
+        <div id="liveLottoResults" class="row g-3">
+          {% if current_session %}
+            {% for r in current_session.results.all %}
+              {% if not r.removed %}
+              <div class="col-md-6">
+                <div class="border rounded-4 p-3 d-flex align-items-center gap-3 bg-light shadow-sm">
+                  {% if r.student.avatar_url %}
+                    <img src="{{ r.student.avatar_url }}" class="avatar-circle avatar-lg">
+                  {% else %}
+                    <div class="avatar-circle avatar-lg">{{ r.student.avatar_initial }}</div>
+                  {% endif %}
+                  <div>
+                    <span class="badge {% if r.is_awarded %}bg-success{% else %}bg-warning text-dark{% endif %} mb-1">
+                      ลำดับที่ #{{ r.order_index }} · {% if r.is_awarded %}+{{ r.points_awarded }} คะแนน{% else %}รอครูสรุปคะแนน{% endif %}
+                    </span>
+                    <div class="fs-4 fw-bold text-success font-monospace">{{ r.student.student_id }}</div>
+                    <div class="fw-bold text-dark">{{ r.student.get_full_name }}</div>
+                    <div class="small text-muted">{{ r.student.room_display }} เลขที่ {{ r.student.class_number }}</div>
+                  </div>
+                </div>
+              </div>
+              {% endif %}
+            {% empty %}
+              <div class="col-12 text-center text-muted py-4">รอครูผู้สอนกดหมุนสุ่ม ID LOTTO...</div>
+            {% endfor %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-stars text-success me-2"></i>ประวัติการถูกสุ่ม Lotto ของคุณ</div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for w in my_wins %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-bold small">{{ w.session.title }}</div>
+              <div class="text-muted" style="font-size:0.75rem;">{{ w.created_at|date:"d/m/Y H:i" }}</div>
+            </div>
+            <span class="badge bg-success">+{{ w.points_awarded }} คะแนน</span>
+          </li>
+          {% empty %}
+          <li class="list-group-item text-center text-muted py-4">คุณยังไม่เคยถูกสุ่มในรอบที่ผ่านมา</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{% if current_session %}
+<script>
+const SESSION_ID = {{ current_session.id }};
+setInterval(() => {
+  fetch(`/api/lotto/${SESSION_ID}/state/`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      const box = document.getElementById('liveLottoResults');
+      if (data.results.length === 0) return;
+      box.innerHTML = data.results.map(r => `
+        <div class="col-md-6">
+          <div class="border rounded-4 p-3 d-flex align-items-center gap-3 bg-light shadow-sm">
+            ${r.avatar_url ? `<img src="${r.avatar_url}" class="avatar-circle avatar-lg">` : `<div class="avatar-circle avatar-lg">${r.avatar_initial}</div>`}
+            <div>
+              <span class="badge ${r.is_awarded ? 'bg-success' : 'bg-warning text-dark'} mb-1">ลำดับที่ #${r.order_index} · ${r.is_awarded ? `+${r.points_awarded} คะแนน` : 'รอครูสรุปคะแนน'}</span>
+              <div class="fs-4 fw-bold text-success font-monospace">${r.student_id}</div>
+              <div class="fw-bold text-dark">${r.full_name}</div>
+              <div class="small text-muted">${r.room_display} เลขที่ ${r.class_number}</div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    });
+}, 3000);
+</script>
+{% endif %}
+{% endblock %}

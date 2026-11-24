@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block title %}แก้ไขโปรไฟล์นักเรียน: {{ student.get_full_name }}{% endblock %}
+{% block page_header %}แก้ไขโปรไฟล์และหมุน/Crop รูปนักเรียน: {{ student.get_full_name }} ({{ student.student_id }}){% endblock %}
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" rel="stylesheet">
+{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-crop text-success me-2"></i>แก้ไข / หมุน / Crop รูปประจำตัวนักเรียน</div>
+      <div class="card-body text-center">
+        {% if student.avatar_url %}
+          <img src="{{ student.avatar_url }}" class="avatar-circle avatar-xl mb-3">
+        {% else %}
+          <div class="avatar-circle avatar-xl mx-auto mb-3">{{ student.avatar_initial }}</div>
+        {% endif %}
+
+        <form method="post" enctype="multipart/form-data" id="teacherCropForm">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="upload_photo">
+          <input type="hidden" name="cropped_image_data" id="tCroppedData">
+          <input type="hidden" name="rotate_deg" id="tRotateDeg" value="0">
+
+          <input type="file" name="avatar_file" id="tAvatarInput" class="form-control form-control-sm mb-2" accept="image/*" required>
+
+          <div id="tCropBox" class="d-none mb-2">
+            <div style="max-height:280px;overflow:hidden;background:#000;border-radius:10px;" class="mb-2">
+              <img id="tCropTarget" src="" style="max-width:100%;">
+            </div>
+            <div class="btn-group btn-group-sm mb-2">
+              <button type="button" class="btn btn-outline-dark" onclick="if(tc)tc.rotate(-90)"><i class="bi bi-arrow-counterclockwise"></i> -90°</button>
+              <button type="button" class="btn btn-outline-dark" onclick="if(tc)tc.rotate(90)"><i class="bi bi-arrow-clockwise"></i> +90°</button>
+              <button type="button" class="btn btn-outline-secondary" onclick="if(tc)tc.zoom(0.1)">ซูมเข้า</button>
+              <button type="button" class="btn btn-outline-secondary" onclick="if(tc)tc.zoom(-0.1)">ซูมออก</button>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-success btn-sm w-100 fw-bold">อัปโหลดและบันทึกรูปประจำตัว</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-person-lines-fill text-primary me-2"></i>ข้อมูลนักเรียน</div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_profile">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small text-muted">เลขประจำตัวนักเรียน</label>
+              <input type="text" class="form-control bg-light fw-bold" value="{{ student.student_id }}" readonly>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">อีเมลโรงเรียน</label>
+              <input type="text" class="form-control bg-light" value="{{ student.email }}" readonly>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-bold">คำนำหน้า</label>
+              <input type="text" name="title_prefix" class="form-control" value="{{ student.title_prefix }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">ชื่อ</label>
+              <input type="text" name="first_name" class="form-control" value="{{ student.first_name }}" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label small fw-bold">นามสกุล</label>
+              <input type="text" name="last_name" class="form-control" value="{{ student.last_name }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">ชั้น / ห้อง</label>
+              <select name="room_code" class="form-select">
+                {% for c in classrooms %}
+                <option value="{{ c.code }}" {% if c.code == student.room_code %}selected{% endif %}>{{ c.name }} ({{ c.code }})</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">เลขที่</label>
+              <input type="number" name="class_number" class="form-control" value="{{ student.class_number }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">กลุ่มเรียน</label>
+              <input type="text" name="group_name" class="form-control" value="{{ student.group_name }}">
+            </div>
+          </div>
+          <div class="mt-3 d-flex justify-content-between">
+            <a href="{% url 'core:teacher_students' %}?room={{ student.room_code }}" class="btn btn-outline-secondary">ย้อนกลับ</a>
+            <button type="submit" class="btn btn-primary fw-bold">บันทึกการแก้ไข</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<script>
+let tc = null;
+document.getElementById('tAvatarInput').addEventListener('change', function(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = function(ev) {
+    const img = document.getElementById('tCropTarget');
+    img.src = ev.target.result;
+    document.getElementById('tCropBox').classList.remove('d-none');
+    if (tc) tc.destroy();
+    tc = new Cropper(img, { aspectRatio: 1, viewMode: 1 });
+  };
+  r.readAsDataURL(f);
+});
+document.getElementById('teacherCropForm').addEventListener('submit', function() {
+  if (tc) {
+    const c = tc.getCroppedCanvas({ width: 480, height: 480 });
+    if (c) document.getElementById('tCroppedData').value = c.toDataURL('image/jpeg', 0.9);
+  }
+});
+</script>
+{% endblock %}

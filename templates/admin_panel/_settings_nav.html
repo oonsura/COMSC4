@@ -1,0 +1,36 @@
+{% with u_name=request.resolver_match.url_name %}
+<ul class="nav nav-pills mb-3 gap-2">
+  <li class="nav-item">
+    <a class="nav-link {% if u_name == 'teacher_scores' %}active{% else %}bg-white border{% endif %} fw-bold" href="{% url 'core:teacher_scores' %}">
+      <i class="bi bi-award-fill {% if u_name != 'teacher_scores' %}text-danger{% endif %} me-1"></i>ระบบคะแนน &amp; กฎคะแนน
+    </a>
+  </li>
+  {% if user.is_admin_role %}
+  <li class="nav-item">
+    <a class="nav-link {% if u_name == 'admin_rank_settings' %}active{% else %}bg-white border{% endif %} fw-bold" href="{% url 'core:admin_rank_settings' %}">
+      <i class="bi bi-trophy-fill {% if u_name != 'admin_rank_settings' %}text-warning{% endif %} me-1"></i>ระดับตามช่วงคะแนน
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if u_name == 'admin_data_files' %}active{% else %}bg-white border{% endif %} fw-bold" href="{% url 'core:admin_data_files' %}">
+      <i class="bi bi-folder2-open {% if u_name != 'admin_data_files' %}text-primary{% endif %} me-1"></i>ปีการศึกษา &amp; ไฟล์ข้อมูล
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if u_name == 'admin_oauth_settings' %}active{% else %}bg-white border{% endif %} fw-bold" href="{% url 'core:admin_oauth_settings' %}">
+      <i class="bi bi-palette-fill {% if u_name != 'admin_oauth_settings' %}text-info{% endif %} me-1"></i>ตั้งค่าทั่วไป สีธีม OAuth &amp; AI
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if u_name == 'admin_manage_staff' %}active{% else %}bg-white border{% endif %} fw-bold" href="{% url 'core:admin_manage_staff' %}">
+      <i class="bi bi-person-gear {% if u_name != 'admin_manage_staff' %}text-success{% endif %} me-1"></i>จัดการ Admin / ผู้ดูแล
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if u_name == 'admin_session_settings' %}active{% else %}bg-white border{% endif %} fw-bold" href="{% url 'core:admin_session_settings' %}">
+      <i class="bi bi-shield-lock-fill {% if u_name != 'admin_session_settings' %}text-warning{% endif %} me-1"></i>ตั้งค่า 1-Session
+    </a>
+  </li>
+  {% endif %}
+</ul>
+{% endwith %}

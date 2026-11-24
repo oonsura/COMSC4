@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+{% block title %}แดชบอร์ดนักเรียน - COMSC4{% endblock %}
+{% block page_header %}หน้าแรกนักเรียน ({{ user.get_full_name }} - {{ user.room_display }}){% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#15803d,#166534);">
+      <div class="small opacity-75">คะแนนสะสมรวมของคุณ</div>
+      <div class="fs-2 fw-bold">{{ user.total_score|floatformat:1 }}</div>
+      <div class="small mt-1"><i class="bi bi-trophy me-1"></i>ห้อง {{ user.room_display }} เลขที่ {{ user.class_number }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#1d4ed8,#1e3a8a);">
+      <div class="small opacity-75">กิจกรรมเรียงลำดับที่เปิดอยู่</div>
+      <div class="fs-2 fw-bold">{{ active_sorting|length }}</div>
+      <a href="{% url 'core:student_sorting' %}" class="text-white small text-decoration-underline">เข้าทำกิจกรรม Sorting →</a>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#b45309,#d97706);">
+      <div class="small opacity-75">ห้องเกม Bingo ที่เปิดอยู่</div>
+      <div class="fs-2 fw-bold">{{ active_bingo|length }}</div>
+      <a href="{% url 'core:student_bingo_list' %}" class="text-white small text-decoration-underline">เข้าเล่นเกม Bingo →</a>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#6d28d9,#4c1d95);">
+      <div class="small opacity-75">สถิติการสุ่ม ID LOTTO ของคุณ</div>
+      <div class="fs-2 fw-bold">{{ my_lotto_count|default:0 }} ครั้ง</div>
+      <div class="small mt-1"><i class="bi bi-dice-6-fill me-1"></i>คะแนนสะสม +{{ my_lotto_points|floatformat:1 }}</div>
+    </div>
+  </div>
+</div>
+
+{% if rank_overview and rank_overview.period_entries %}
+<div class="row g-3 mb-4">
+  {% for pe in rank_overview.period_entries %}
+  <div class="col-md-6">
+    <div class="card h-100 border-2 shadow-sm" {% if pe.rank %}style="border-color:{{ pe.rank.color_hex }} !important;"{% endif %}>
+      <div class="card-body py-3 d-flex align-items-center gap-3">
+        {% if pe.rank %}
+        <img src="{{ pe.rank.icon_url }}" alt="{{ pe.rank.name }}" style="width:72px;height:72px;object-fit:contain;" class="flex-shrink-0">
+        {% endif %}
+        <div class="flex-grow-1">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-1">
+            <span class="small fw-bold text-dark">{{ pe.period.name }}</span>
+            <a href="{% url 'core:student_scores' %}?period_id={{ pe.period.id }}" class="small text-decoration-none">ดูเกณฑ์ 7 ระดับ</a>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+            {% if pe.rank %}
+            <span class="badge fs-6 px-3 py-1" style="background:{{ pe.rank.color_hex }};color:#fff;">
+              {{ pe.rank.name }}
+            </span>
+            {% endif %}
+            <span class="fw-bold text-dark fs-4">{{ pe.percent|floatformat:1 }}%</span>
+            <span class="small text-muted">({{ pe.net_pts|floatformat:1 }} / {{ pe.max_score|floatformat:0 }} คะแนน)</span>
+          </div>
+          <div class="progress mt-2" style="height:7px;">
+            <div class="progress-bar" role="progressbar"
+                 style="width:{{ pe.percent|floatformat:1 }}%;{% if pe.rank %}background:{{ pe.rank.color_hex }};{% endif %}"></div>
+          </div>
+          {% if pe.next_rank %}
+          <div class="small text-muted mt-1" style="font-size:0.75rem;">
+            <i class="bi bi-arrow-up-circle text-primary me-1"></i>ระดับถัดไป: <b>{{ pe.next_rank.name }}</b> ({{ pe.next_rank.condition_display }})
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% elif rank_overview and rank_overview.overall_rank %}
+<div class="card mb-4 border-2" style="border-color:{{ rank_overview.overall_rank.color_hex }} !important;">
+  <div class="card-body py-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <img src="{{ rank_overview.overall_rank.icon_url }}" alt="{{ rank_overview.overall_rank.name }}" style="width:72px;height:72px;object-fit:contain;">
+      <div>
+        <div class="small text-muted fw-semibold">ระดับตามช่วงคะแนน</div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+          <span class="badge fs-6 px-3 py-1" style="background:{{ rank_overview.overall_rank.color_hex }};color:#fff;">
+            {{ rank_overview.overall_rank.name }}
+          </span>
+          <span class="fw-bold text-dark fs-4">{{ rank_overview.overall_percent|floatformat:1 }}%</span>
+        </div>
+      </div>
+    </div>
+    <a href="{% url 'core:student_scores' %}" class="btn btn-sm btn-outline-primary fw-bold">รายละเอียดคะแนน</a>
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-controller text-success me-2"></i>เกมและกิจกรรมในคาบเรียนวันนี้</span>
+        <a href="{% url 'core:student_attendance' %}" class="btn btn-sm btn-success"><i class="bi bi-qr-code me-1"></i>เช็คชื่อเข้าเรียน</a>
+      </div>
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <a href="{% url 'core:student_sorting' %}" class="card border h-100 text-decoration-none p-3 text-center hover-shadow">
+              <i class="bi bi-bar-chart-steps fs-1 text-primary mb-2"></i>
+              <div class="fw-bold text-dark">เรียงลำดับ (Sorting)</div>
+              <div class="small text-muted">ฝึกและสอบเรียงลำดับข้อมูล ลุ้นคะแนนคนสูงสุด</div>
+            </a>
+          </div>
+          <div class="col-md-6">
+            <a href="{% url 'core:student_bingo_list' %}" class="card border h-100 text-decoration-none p-3 text-center">
+              <i class="bi bi-grid-3x3-gap-fill fs-1 text-warning mb-2"></i>
+              <div class="fw-bold text-dark">เกม Bingo ห้องเรียน</div>
+              <div class="small text-muted">จัดตาราง Bingo &amp; ออกเลขพร้อมรับคะแนนผู้ชนะ</div>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-dice-6-fill text-danger me-2"></i>สถิติการสุ่ม ID LOTTO ของคุณ</span>
+        <span class="badge bg-primary">ได้รับ {{ my_lotto_count|default:0 }} ครั้ง · +{{ my_lotto_points|floatformat:1 }} คะแนน</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>รอบการสุ่ม</th><th class="text-center">ลำดับ</th><th class="text-center">สถานะ</th><th class="text-end">คะแนน</th></tr>
+            </thead>
+            <tbody>
+              {% for lw in my_lotto_wins|slice:":6" %}
+              <tr>
+                <td class="small fw-semibold">{{ lw.session.title }} <span class="text-muted">({{ lw.created_at|date:"d/m/Y H:i" }})</span></td>
+                <td class="text-center small">#{{ lw.order_index }}</td>
+                <td class="text-center small">
+                  {% if lw.is_awarded %}
+                    <span class="badge bg-success">รับคะแนนแล้ว</span>
+                  {% else %}
+                    <span class="badge bg-warning text-dark">รอสรุปผล</span>
+                  {% endif %}
+                </td>
+                <td class="text-end fw-bold text-success">+{{ lw.points_awarded|floatformat:1 }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-3 small">ยังไม่มีประวัติถูกสุ่ม ID LOTTO</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="bi bi-clock-history text-primary me-2"></i>ประวัติคะแนนล่าสุดของคุณ</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>วันเวลา</th><th>รายการ / กฎคะแนน</th><th>ที่มาของคะแนน</th><th class="text-end">คะแนน</th></tr>
+            </thead>
+            <tbody>
+              {% for log in recent_scores %}
+              <tr>
+                <td class="small text-muted">{{ log.created_at|date:"d/m/Y H:i" }}</td>
+                <td>{{ log.reason }}</td>
+                <td><span class="badge bg-secondary-subtle text-dark">{{ log.get_source_module_display }}</span></td>
+                <td class="text-end fw-bold {% if log.points >= 0 %}text-success{% else %}text-danger{% endif %}">
+                  {% if log.points >= 0 %}+{% endif %}{{ log.points|floatformat:1 }}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted py-4">ยังไม่มีประวัติคะแนน</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    {% include 'student/_period_stats_tabs_card.html' with tab_prefix='dash' pref_key='dashboard_period_id' room_label=user.room_display allow_room_switch=False max_list_height='430px' %}
+  </div>
+</div>
+{% endblock %}

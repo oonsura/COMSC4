@@ -1,0 +1,447 @@
+{% extends 'base.html' %}
+{% block title %}ตั้งค่าระบบ · ทั่วไป, สีธีม, Google OAuth &amp; AI - COMSC4{% endblock %}
+{% block page_header %}ตั้งค่าระบบ · ปรับแต่งสีธีมผู้ดูแล/นักเรียน, ข้อมูลทั่วไป, เมนูเกม, Google OAuth และ AI API{% endblock %}
+{% block content %}
+{% include 'admin_panel/_settings_nav.html' %}
+
+<div class="card shadow-sm" style="max-width:1100px;">
+  <div class="card-header bg-dark text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span><i class="bi bi-sliders text-warning me-2"></i>ตั้งค่าระบบกลาง · ข้อมูลทั่วไป, สีธีมของระบบ, เมนูเกม, OAuth &amp; AI API</span>
+    <form method="post" class="m-0">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="reset_theme_colors">
+      <button type="submit" class="btn btn-sm btn-outline-warning fw-bold">
+        <i class="bi bi-arrow-counterclockwise me-1"></i>รีเซ็ตสีมาตรฐาน
+      </button>
+    </form>
+  </div>
+  <div class="card-body">
+    <form method="post" id="oauthSettingsMainForm">
+      {% csrf_token %}
+      <input type="hidden" name="action" id="oauthActionHidden" value="save_all">
+      <input type="hidden" name="game_toggles_present" value="1">
+
+      <!-- 1. ตั้งค่าทั่วไปของระบบ & เมนูเกม -->
+      <h6 class="fw-bold text-dark mb-2">
+        <i class="bi bi-gear-wide-connected text-primary me-1"></i>1. ข้อมูลทั่วไปของระบบ, ขนาดหัวข้อเมนูข้าง &amp; การเปิด/ปิดเมนูเกมหลัก
+      </h6>
+      <div class="row g-3 mb-4 p-3 border rounded-3 bg-light">
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">ชื่อระบบหลัก (Site Title)</label>
+          <input type="text" name="site_title" class="form-control fw-bold" value="{{ setting.site_title }}" maxlength="150" required>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label small fw-bold">คำอธิบายระบบ / หัวข้อแถบบน (Subtitle)</label>
+          <input type="text" name="site_subtitle" class="form-control" value="{{ setting.site_subtitle }}" maxlength="200">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-bold">ขนาดหัวข้อใหญ่เมนูข้าง (px)</label>
+          <div class="input-group">
+            <input type="number" name="sidebar_heading_size_px" class="form-control fw-bold text-center" min="11" max="22" value="{{ setting.sidebar_heading_size_px|default:14 }}">
+            <span class="input-group-text">px</span>
+          </div>
+          <div class="form-text">กำหนดได้ 11–22 px (มาตรฐาน 14 px)</div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-bold">คะแนนเต็มเริ่มต้นของกิจกรรมใหม่</label>
+          <input type="number" step="0.5" min="1" name="last_activity_max_score" class="form-control fw-bold text-center" value="{{ setting.last_activity_max_score|default:5.0|floatformat:-1 }}">
+        </div>
+        <div class="col-md-9 d-flex flex-wrap align-items-center gap-4 pt-md-3">
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" name="sorting_menu_open" value="1" id="swSortingMenu" {% if setting.sorting_menu_open %}checked{% endif %}>
+            <label class="form-check-label small fw-bold" for="swSortingMenu">เปิดเมนูเรียงลำดับ (Sorting)</label>
+          </div>
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" name="bingo_menu_open" value="1" id="swBingoMenu" {% if setting.bingo_menu_open %}checked{% endif %}>
+            <label class="form-check-label small fw-bold" for="swBingoMenu">เปิดเมนูเกม Bingo</label>
+          </div>
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" name="lotto_menu_open" value="1" id="swLottoMenu" {% if setting.lotto_menu_open %}checked{% endif %}>
+            <label class="form-check-label small fw-bold" for="swLottoMenu">เปิดเมนู Debsirin Lotto</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Google OAuth & IP เช็คชื่อ -->
+      <h6 class="fw-bold text-success mb-2">2. การล็อกอินด้วย Google OAuth &amp; IP เช็คชื่อ</h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">โดเมนอีเมลโรงเรียนที่อนุญาต</label>
+          <div class="input-group">
+            <span class="input-group-text">@</span>
+            <input type="text" name="allowed_oauth_domain" class="form-control fw-bold" value="{{ setting.allowed_oauth_domain }}" required>
+          </div>
+          <div class="form-text">รูปแบบอีเมลนักเรียน: <code>s[เลขประจำตัว 5 หลัก]@{{ setting.allowed_oauth_domain }}</code></div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">Prefix IP ห้องเรียนสำหรับเช็คชื่อ</label>
+          <input type="text" name="attendance_check_ip_prefix" class="form-control" value="{{ setting.attendance_check_ip_prefix }}" placeholder="เว้นว่าง=อนุญาตทุก IP">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">Google OAuth Client ID (ตัวเลือกเสริมสำหรับ Production)</label>
+          <input type="text" name="google_client_id" class="form-control" value="{{ setting.google_client_id }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">Google OAuth Client Secret</label>
+          <input type="password" name="google_client_secret" class="form-control" value="{{ setting.google_client_secret }}">
+        </div>
+      </div>
+
+      <!-- 3. AI API -->
+      <h6 class="fw-bold text-primary mb-2">3. การเชื่อมต่อ AI สร้างคำถาม (Claude API หรือ Gemini API)</h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">ผู้ให้บริการ AI หลัก</label>
+          <select name="ai_provider" class="form-select">
+            <option value="gemini" {% if setting.ai_provider == 'gemini' %}selected{% endif %}>Google Gemini API</option>
+            <option value="claude" {% if setting.ai_provider == 'claude' %}selected{% endif %}>Anthropic Claude API</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">Gemini API Key</label>
+          <input type="password" name="gemini_api_key" class="form-control" value="{{ setting.gemini_api_key }}" placeholder="เว้นว่าง=ใช้ Smart CS AI ในตัว">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">Claude API Key</label>
+          <input type="password" name="claude_api_key" class="form-control" value="{{ setting.claude_api_key }}" placeholder="เว้นว่าง=ใช้ Smart CS AI ในตัว">
+        </div>
+      </div>
+
+      <!-- 4. ปรับแต่งสีธีมของระบบอย่างละเอียด -->
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <h6 class="fw-bold text-danger mb-0">
+          <i class="bi bi-palette-fill me-1"></i>4. ปรับแต่งสีธีมของระบบ (ผู้ดูแล/ครู, นักเรียน และส่วนแสดงผลต่างๆ)
+        </h6>
+        <div class="d-flex flex-wrap gap-1 align-items-center small">
+          <span class="text-muted fw-semibold me-1">ชุดสีด่วน:</span>
+          <button type="button" class="btn btn-xs btn-outline-success py-0 px-2 fw-bold" onclick="applyThemePreset('default')">เทพศิรินทร์มาตรฐาน</button>
+          <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 fw-bold" onclick="applyThemePreset('navy_gold')">น้ำเงิน-ทองวิชาการ</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 fw-bold" onclick="applyThemePreset('emerald_soft')">เขียวมินิมอลสว่าง</button>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <!-- ฝั่งผู้ดูแล / ครู -->
+        <div class="col-lg-6">
+          <div class="border rounded-3 p-3 bg-light h-100">
+            <div class="fw-bold text-primary mb-2"><i class="bi bi-person-badge-fill me-1"></i>สีสำหรับฝั่งผู้ดูแล / ครูผู้สอน</div>
+            <div class="row g-2 small">
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">แถบเมนูข้าง (บน)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_sidebar_bg_1" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_sidebar_bg_1 }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_sidebar_bg_1 }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">แถบเมนูข้าง (ล่าง)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_sidebar_bg_2" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_sidebar_bg_2 }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_sidebar_bg_2 }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">สีหลัก (Primary)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_primary" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_primary }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_primary }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">สีเน้นหัวข้อเมนู (Accent)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_accent" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_accent }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_accent }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">พื้นหลังแถบด้านบน</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_topbar_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_topbar_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_topbar_bg }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">สีตัวอักษรแถบด้านบน</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_topbar_text" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_topbar_text }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_topbar_text }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">พื้นหลังหน้าเว็บ</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_body_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_body_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_body_bg }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">กล่องเช็คชื่อ</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_checkin_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_checkin_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_checkin_bg }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">พื้นหลังการ์ด (Card)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_card_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_card_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_card_bg }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">หัวการ์ด (Card Header)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_teacher_card_header_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.teacher_card_header_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.teacher_card_header_bg }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ฝั่งนักเรียน -->
+        <div class="col-lg-6">
+          <div class="border rounded-3 p-3 bg-light h-100">
+            <div class="fw-bold text-success mb-2"><i class="bi bi-mortarboard-fill me-1"></i>สีสำหรับฝั่งนักเรียน</div>
+            <div class="row g-2 small">
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">แถบเมนูข้าง (บน)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_sidebar_bg_1" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_sidebar_bg_1 }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_sidebar_bg_1 }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">แถบเมนูข้าง (ล่าง)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_sidebar_bg_2" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_sidebar_bg_2 }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_sidebar_bg_2 }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">สีหลัก (Primary)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_primary" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_primary }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_primary }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">สีเน้นหัวข้อเมนู (Accent)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_accent" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_accent }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_accent }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">พื้นหลังแถบด้านบน</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_topbar_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_topbar_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_topbar_bg }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">สีตัวอักษรแถบด้านบน</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_topbar_text" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_topbar_text }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_topbar_text }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">พื้นหลังหน้าเว็บ</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_body_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_body_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_body_bg }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">กล่องเช็คชื่อ</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_checkin_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_checkin_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_checkin_bg }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">พื้นหลังการ์ด (Card)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_card_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_card_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_card_bg }}</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold mb-0">หัวการ์ด (Card Header)</label>
+                <div class="input-group input-group-sm">
+                  <input type="color" name="theme_student_card_header_bg" class="form-control form-control-color theme-color-input" value="{{ theme_colors.student_card_header_bg }}">
+                  <span class="input-group-text font-monospace hex-code">{{ theme_colors.student_card_header_bg }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- องค์ประกอบเฉพาะส่วน: ผังที่นั่งเช็คชื่อ, กิจกรรมกลุ่ม และวงล้อ Bingo -->
+        <div class="col-12">
+          <div class="border rounded-3 p-3 bg-light">
+            <div class="fw-bold text-dark mb-2">
+              <i class="bi bi-grid-3x3-gap-fill text-warning me-1"></i>สีองค์ประกอบพิเศษ (ผังที่นั่งเช็คชื่อ · กิจกรรมกลุ่ม · วงล้อ Bingo)
+            </div>
+            <div class="row g-2 small">
+              <div class="col-md-4 col-lg-2">
+                <label class="form-label fw-semibold mb-0">ที่นั่งปกติ (เริ่มต้น)</label>
+                <input type="color" name="theme_seat_default_bg" class="form-control form-control-color w-100 theme-color-input" value="{{ theme_colors.seat_default_bg }}">
+              </div>
+              <div class="col-md-4 col-lg-2">
+                <label class="form-label fw-semibold mb-0">ที่นั่ง Login (เขียว 1)</label>
+                <input type="color" name="theme_seat_online_bg_1" class="form-control form-control-color w-100 theme-color-input" value="{{ theme_colors.seat_online_bg_1 }}">
+              </div>
+              <div class="col-md-4 col-lg-2">
+                <label class="form-label fw-semibold mb-0">ที่นั่ง Login (เขียว 2)</label>
+                <input type="color" name="theme_seat_online_bg_2" class="form-control form-control-color w-100 theme-color-input" value="{{ theme_colors.seat_online_bg_2 }}">
+              </div>
+              <div class="col-md-4 col-lg-2">
+                <label class="form-label fw-semibold mb-0">เส้นขอบ Login ชัด</label>
+                <input type="color" name="theme_seat_online_border" class="form-control form-control-color w-100 theme-color-input" value="{{ theme_colors.seat_online_border }}">
+              </div>
+              <div class="col-md-4 col-lg-2">
+                <label class="form-label fw-semibold mb-0">ที่นั่งเช็คชื่อแล้ว</label>
+                <input type="color" name="theme_seat_checked_bg" class="form-control form-control-color w-100 theme-color-input" value="{{ theme_colors.seat_checked_bg }}">
+              </div>
+              <div class="col-md-4 col-lg-2">
+                <label class="form-label fw-semibold mb-0">พื้นหลังกิจกรรมกลุ่ม</label>
+                <input type="color" name="theme_group_activity_bg" class="form-control form-control-color w-100 theme-color-input" value="{{ theme_colors.group_activity_bg }}">
+              </div>
+              <div class="col-md-4 col-lg-3">
+                <label class="form-label fw-semibold mb-0">เส้นขอบกิจกรรมกลุ่ม</label>
+                <input type="color" name="theme_group_activity_border" class="form-control form-control-color w-100 theme-color-input" value="{{ theme_colors.group_activity_border }}">
+              </div>
+              <div class="col-md-4 col-lg-3">
+                <label class="form-label fw-semibold mb-0">Bingo เลขออกทั้งระดับ</label>
+                <input type="color" name="theme_bingo_all_color" class="form-control form-control-color w-100 theme-color-input" value="{{ theme_colors.bingo_all_color }}">
+              </div>
+              <div class="col-md-4 col-lg-3">
+                <label class="form-label fw-semibold mb-0">Bingo เลขออกเฉพาะห้อง</label>
+                <input type="color" name="theme_bingo_room_color" class="form-control form-control-color w-100 theme-color-input" value="{{ theme_colors.bingo_room_color }}">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. ปีการศึกษา & Google Drive Folder -->
+      <h6 class="fw-bold text-primary mb-2">
+        <i class="bi bi-calendar2-week-fill me-1"></i>5. ปีการศึกษาปัจจุบัน &amp; Google Drive Folder เก็บไฟล์กิจกรรม
+      </h6>
+      <div class="row g-3 mb-4 p-3 border rounded-3 bg-light">
+        <div class="col-md-5">
+          <label class="form-label small fw-bold">ปีการศึกษาที่เปิดใช้งานอยู่</label>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <select name="current_academic_year" class="form-select fw-bold" style="max-width:190px;">
+              {% for ay in academic_years %}
+              <option value="{{ ay.year }}" {% if ay.year == setting.current_academic_year %}selected{% endif %}>
+                ปีการศึกษา {{ ay.year }}{% if ay.is_current %} (ปัจจุบัน){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            <a href="{% url 'core:admin_data_files' %}#newAcademicYearCard" class="btn btn-sm btn-outline-primary fw-bold text-nowrap">
+              <i class="bi bi-plus-circle-fill me-1"></i>ขึ้นปีการศึกษาใหม่
+            </a>
+          </div>
+          <div class="form-text">การขึ้นปีการศึกษาใหม่ต้องกดสร้างที่เมนู <b>ปีการศึกษา &amp; ไฟล์ข้อมูล</b> เพื่อคัดลอกบทเรียน/กิจกรรมและรีเซ็ตเกม</div>
+        </div>
+        <div class="col-md-7">
+          <label class="form-label small fw-bold">Google Drive Folder เริ่มต้น</label>
+          <div class="input-group">
+            <input type="text" name="gdrive_default_folder_url" class="form-control" value="{{ setting.gdrive_default_folder_url }}" placeholder="https://drive.google.com/drive/folders/...">
+            <button type="submit" class="btn btn-outline-success fw-bold"
+                    onclick="document.getElementById('oauthActionHidden').value='verify_default_gdrive';">
+              <i class="bi bi-shield-check me-1"></i>ตรวจสอบ Folder
+            </button>
+          </div>
+          <div class="mt-1">
+            {% if setting.gdrive_default_folder_verified %}
+              <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>ตรวจสอบ Google Drive Folder เริ่มต้นผ่านแล้ว</span>
+            {% elif setting.gdrive_default_folder_url %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill me-1"></i>ยังไม่ผ่านการตรวจสอบ (กดปุ่มตรวจสอบ Folder เพื่ออนุมัติ)</span>
+            {% else %}
+              <span class="text-muted small">ระบุลิงก์ Google Drive Folder และกดตรวจสอบสิทธิ์ก่อนใช้งาน</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-bold">Google Drive Service Account JSON (ตัวเลือกเสริมสำหรับอัปโหลดไฟล์นักเรียนขึ้น Drive อัตโนมัติ)</label>
+          <textarea name="gdrive_service_account_json" rows="3" class="form-control font-monospace small" placeholder='{"type": "service_account", "client_email": "...", "private_key": "..."}'>{{ setting.gdrive_service_account_json }}</textarea>
+          <div class="form-text">หากเว้นว่าง ระบบจะตรวจสอบการเข้าถึงผ่านลิงก์ Folder สาธารณะ ("ทุกคนที่มีลิงก์") ก่อนอนุมัติใช้งาน</div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary fw-bold px-4" onclick="document.getElementById('oauthActionHidden').value='save_all';">
+        <i class="bi bi-save me-1"></i>บันทึกการตั้งค่าและสีธีมทั้งหมด
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const THEME_PRESETS = {
+  default: {
+    teacher_sidebar_bg_1: '#0f4c5c', teacher_sidebar_bg_2: '#1a759f', teacher_primary: '#0f4c5c',
+    teacher_accent: '#facc15', teacher_topbar_bg: '#ffffff', teacher_topbar_text: '#0f172a',
+    teacher_body_bg: '#f1f5f9', teacher_card_bg: '#ffffff', teacher_card_header_bg: '#ffffff', teacher_checkin_bg: '#ecfdf5',
+    student_sidebar_bg_1: '#14532d', student_sidebar_bg_2: '#166534', student_primary: '#15803d',
+    student_accent: '#eab308', student_topbar_bg: '#ffffff', student_topbar_text: '#0f172a',
+    student_body_bg: '#f1f5f9', student_card_bg: '#ffffff', student_card_header_bg: '#ffffff', student_checkin_bg: '#ecfdf5',
+    seat_default_bg: '#ffffff', seat_online_bg_1: '#bbf7d0', seat_online_bg_2: '#86efac',
+    seat_online_border: '#15803d', seat_checked_bg: '#dcfce7',
+    group_activity_bg: '#fefce8', group_activity_border: '#fde047',
+    bingo_all_color: '#16a34a', bingo_room_color: '#eab308'
+  },
+  navy_gold: {
+    teacher_sidebar_bg_1: '#0f172a', teacher_sidebar_bg_2: '#1e3a8a', teacher_primary: '#1d4ed8',
+    teacher_accent: '#fbbf24', teacher_topbar_bg: '#ffffff', teacher_topbar_text: '#0f172a',
+    teacher_body_bg: '#f8fafc', teacher_card_bg: '#ffffff', teacher_card_header_bg: '#eff6ff', teacher_checkin_bg: '#f0fdf4',
+    student_sidebar_bg_1: '#064e3b', student_sidebar_bg_2: '#047857', student_primary: '#059669',
+    student_accent: '#fde047', student_topbar_bg: '#ffffff', student_topbar_text: '#0f172a',
+    student_body_bg: '#f0fdf4', student_card_bg: '#ffffff', student_card_header_bg: '#ecfdf5', student_checkin_bg: '#dcfce7',
+    seat_default_bg: '#ffffff', seat_online_bg_1: '#bbf7d0', seat_online_bg_2: '#4ade80',
+    seat_online_border: '#166534', seat_checked_bg: '#dcfce7',
+    group_activity_bg: '#fefce8', group_activity_border: '#facc15',
+    bingo_all_color: '#16a34a', bingo_room_color: '#eab308'
+  },
+  emerald_soft: {
+    teacher_sidebar_bg_1: '#115e59', teacher_sidebar_bg_2: '#0f766e', teacher_primary: '#0d9488',
+    teacher_accent: '#fde047', teacher_topbar_bg: '#ffffff', teacher_topbar_text: '#134e4a',
+    teacher_body_bg: '#f0fdfa', teacher_card_bg: '#ffffff', student_card_bg: '#ffffff',
+    teacher_card_header_bg: '#f0fdfa', teacher_checkin_bg: '#ecfdf5',
+    student_sidebar_bg_1: '#166534', student_sidebar_bg_2: '#15803d', student_primary: '#16a34a',
+    student_accent: '#facc15', student_topbar_bg: '#ffffff', student_topbar_text: '#14532d',
+    student_body_bg: '#f7fee7', student_card_header_bg: '#f7fee7', student_checkin_bg: '#ecfdf5',
+    seat_default_bg: '#ffffff', seat_online_bg_1: '#bbf7d0', seat_online_bg_2: '#86efac',
+    seat_online_border: '#15803d', seat_checked_bg: '#dcfce7',
+    group_activity_bg: '#fefce8', group_activity_border: '#fde047',
+    bingo_all_color: '#16a34a', bingo_room_color: '#eab308'
+  }
+};
+
+function applyThemePreset(name) {
+  const p = THEME_PRESETS[name];
+  if (!p) return;
+  Object.entries(p).forEach(([k, val]) => {
+    const inp = document.querySelector(`input[name="theme_${k}"]`);
+    if (inp) {
+      inp.value = val;
+      const badge = inp.closest('.input-group')?.querySelector('.hex-code');
+      if (badge) badge.textContent = val;
+    }
+  });
+}
+
+document.querySelectorAll('.theme-color-input').forEach(inp => {
+  inp.addEventListener('input', () => {
+    const badge = inp.closest('.input-group')?.querySelector('.hex-code');
+    if (badge) badge.textContent = inp.value;
+  });
+});
+</script>
+{% endblock %}

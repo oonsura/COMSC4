@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>เข้าสู่ระบบ - {{ site_setting.site_title|default:"COMSC4 DEBSIRIN" }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Sarabun', sans-serif; }
+    body {
+      background: linear-gradient(135deg, #064e3b 0%, #14532d 50%, #1e3a8a 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+    }
+    .login-box {
+      background: #fff;
+      border-radius: 20px;
+      max-width: 900px;
+      width: 100%;
+      overflow: hidden;
+      box-shadow: 0 25px 65px rgba(0,0,0,0.38);
+    }
+    .oauth-panel {
+      background: linear-gradient(160deg, #f0fdf4 0%, #fefce8 100%);
+      border-right: 1px solid #e2e8f0;
+      padding: 2.2rem;
+    }
+    .staff-panel {
+      padding: 2.2rem;
+      background: #ffffff;
+    }
+    .btn-google {
+      background: #fff;
+      border: 2px solid #16a34a;
+      color: #14532d;
+      font-weight: 700;
+      border-radius: 12px;
+      padding: 0.75rem 1rem;
+      transition: all 0.2s;
+    }
+    .btn-google:hover {
+      background: #16a34a;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+<div class="login-box">
+  <div class="bg-dark text-white px-4 py-3 d-flex flex-wrap justify-content-between align-items-center">
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge bg-warning text-dark fw-bold">DEBSIRIN</span>
+      <h5 class="mb-0 fw-bold">{{ site_setting.site_title }} — ระบบจัดการการเรียนการสอนวิทยาการคำนวณ</h5>
+    </div>
+    <span class="small text-warning"><i class="bi bi-shield-check me-1"></i>รองรับ 1-Session Guard &amp; Google OAuth @{{ site_setting.allowed_oauth_domain }}</span>
+  </div>
+
+  {% if messages %}
+  <div class="px-4 pt-3">
+    {% for m in messages %}
+      <div class="alert alert-{% if m.tags == 'error' %}danger{% else %}{{ m.tags|default:'info' }}{% endif %} mb-2 py-2">
+        <i class="bi bi-exclamation-circle-fill me-2"></i>{{ m }}
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="row g-0">
+    <!-- ฝั่งซ้าย: นักเรียนล็อกอินด้วย Google OAuth (@debsirin.ac.th) ตามสเปก A.1 -->
+    <div class="col-lg-6 oauth-panel">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="fw-bold text-success">สำหรับนักเรียน (Google OAuth)</span>
+      </div>
+      <h5 class="fw-bold text-dark mb-2">เข้าสู่ระบบด้วยบัญชี Google โรงเรียน</h5>
+      <p class="small text-secondary mb-3">
+        ใช้อีเมลโรงเรียนรูปแบบ <code>s[เลขประจำตัว 5 หลัก]@{{ site_setting.allowed_oauth_domain }}</code><br>
+        ตัวอย่าง: เลขประจำตัว <b>51443</b> → <code>s51443@{{ site_setting.allowed_oauth_domain }}</code>
+      </p>
+
+      <form method="post" action="{% url 'core:google_oauth_login' %}">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label fw-semibold small">อีเมล Google โรงเรียนเทพศิรินทร์</label>
+          <div class="input-group">
+            <span class="input-group-text bg-white text-danger"><i class="bi bi-google"></i></span>
+            <input type="email" name="google_email" id="googleEmailInput" class="form-control form-control-lg"
+                   placeholder="เช่น s51443@{{ site_setting.allowed_oauth_domain }}" value="s51443@{{ site_setting.allowed_oauth_domain }}" required>
+          </div>
+          <div class="form-text">ระบบจะตรวจสอบโดเมน <code>@{{ site_setting.allowed_oauth_domain }}</code> และแยกเลขประจำตัว 5 หลักอัตโนมัติ</div>
+        </div>
+        <button type="submit" class="btn btn-google w-100 shadow-sm mb-3">
+          <i class="bi bi-google me-2"></i>ดำเนินการต่อด้วย Google (@{{ site_setting.allowed_oauth_domain }})
+        </button>
+      </form>
+
+      <div class="border-top pt-3 mt-2">
+        <div class="small fw-bold text-dark mb-2"><i class="bi bi-lightning-charge-fill text-warning me-1"></i>คลิกเลือกบัญชีนักเรียนจริงในระบบเพื่อทดสอบรวดเร็ว:</div>
+        <div class="d-flex flex-wrap gap-1">
+          {% for st in sample_students %}
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="fillStudentEmail('{{ st.email }}')">
+            {{ st.email|cut:"@debsirin.ac.th" }} ({{ st.first_name }})
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- ฝั่งขวา: ผู้ดูแล/ครู และ Admin และนักเรียนกรณีพิเศษ (Username / Password) -->
+    <div class="col-lg-6 staff-panel">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="fw-bold text-primary">ผู้ดูแล / ครู / Admin และนักเรียนกรณีพิเศษ</span>
+      </div>
+      <h5 class="fw-bold text-dark mb-2">เข้าสู่ระบบด้วย Username และรหัสผ่าน</h5>
+      <p class="small text-secondary mb-3">
+        สำหรับผู้ดูแล/ครู และนักเรียนกรณีพิเศษที่ได้รับสิทธิ์ล็อกอินด้วยรหัสผ่าน (เช่น <code>99999 / 1234</code>)
+      </p>
+
+      <form method="post" action="{% url 'core:login' %}">
+        {% csrf_token %}
+        <input type="hidden" name="login_mode" value="staff">
+        <div class="mb-3">
+          <label class="form-label fw-semibold small">ชื่อผู้ใช้ (Username หรือ รหัสนักเรียนกรณีพิเศษ)</label>
+          <div class="input-group">
+            <span class="input-group-text bg-light"><i class="bi bi-person-badge"></i></span>
+            <input type="text" name="username" id="staffUser" class="form-control" placeholder="admin, teacher หรือ 99999" required>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold small">รหัสผ่าน (Password)</label>
+          <div class="input-group">
+            <span class="input-group-text bg-light"><i class="bi bi-key"></i></span>
+            <input type="password" name="password" id="staffPass" class="form-control" placeholder="รหัสผ่าน" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary w-100 py-2 fw-bold rounded-3">
+          <i class="bi bi-box-arrow-in-right me-2"></i>เข้าสู่ระบบด้วยรหัสผ่าน
+        </button>
+      </form>
+
+      <div class="border-top pt-3 mt-4">
+        <div class="small fw-bold text-muted mb-2">บัญชีเริ่มต้นสำหรับทดสอบระบบ:</div>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-primary flex-fill" onclick="fillStaff('admin','1234')">
+            <i class="bi bi-shield-lock me-1"></i>Admin: <b>admin / 1234</b>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-info text-dark flex-fill" onclick="fillStaff('teacher','1234')">
+            <i class="bi bi-person-workspace me-1"></i>ครูผู้สอน: <b>teacher / 1234</b>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-warning text-dark w-100" onclick="fillStaff('99999','1234')">
+            <i class="bi bi-person-check-fill me-1"></i>นักเรียนกรณีพิเศษ: <b>99999 / 1234</b> (นายสมชาย ใจดี ม.4/1 เลขที่สุดท้าย)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function fillStudentEmail(email) {
+  document.getElementById('googleEmailInput').value = email;
+}
+function fillStaff(u, p) {
+  document.getElementById('staffUser').value = u;
+  document.getElementById('staffPass').value = p;
+}
+</script>
+</body>
+</html>

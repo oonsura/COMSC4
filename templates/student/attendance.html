@@ -1,0 +1,307 @@
+{% extends 'base.html' %}
+{% load comsc4_tags %}
+{% block title %}เช็คชื่อ & แผนผังที่นั่งห้องเรียน - COMSC4{% endblock %}
+{% block page_header %}เช็คชื่อเข้าเรียน (Google OAuth + โค้ดผู้ดูแล + ตรวจ IP + แผนผังที่นั่ง){% endblock %}
+{% block extra_css %}
+<style>
+  .student-seat-grid-wrap {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .student-seat-grid {
+    display: grid;
+    grid-template-columns: 24px repeat(var(--cols), minmax(0, 1fr));
+    gap: 3px;
+    width: 100%;
+  }
+  .student-grid-corner,
+  .student-grid-col-hdr,
+  .student-grid-row-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.68rem;
+    font-weight: 700;
+    border-radius: 4px;
+    padding: 2px 4px;
+  }
+  .student-grid-corner,
+  .student-grid-row-hdr {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+  }
+  .student-grid-col-hdr {
+    background: #e0f2fe;
+    color: #0f4c5c;
+    border: 1px solid #bae6fd;
+  }
+  .student-seat-cell {
+    min-width: 0;
+    min-height: 48px;
+    overflow: hidden;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 3px 5px;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    cursor: pointer;
+    transition: border-color 0.12s, box-shadow 0.12s, transform 0.08s;
+  }
+  .student-seat-cell:hover:not(.is-disabled) {
+    border-color: #2563eb;
+    transform: translateY(-1px);
+  }
+  .student-seat-cell.is-selected {
+    border: 2px solid #2563eb !important;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+  }
+  .student-seat-cell.is-mine {
+    background: #fef9c3;
+    border-color: #eab308;
+  }
+  .student-seat-cell.is-taken {
+    background: #dcfce7;
+    border-color: #86efac;
+  }
+  .student-seat-cell.is-assigned-me {
+    background: #e0f2fe;
+    border-color: #38bdf8;
+  }
+  .student-seat-cell.is-disabled {
+    background: repeating-linear-gradient(45deg, #e2e8f0, #e2e8f0 5px, #f1f5f9 5px, #f1f5f9 10px);
+    color: #64748b;
+    cursor: default;
+    align-items: center;
+  }
+  .student-seat-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2px;
+    font-size: 0.62rem;
+    min-width: 0;
+  }
+  .student-seat-lbl {
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .student-seat-no {
+    background: #1e293b;
+    color: #fff;
+    border-radius: 4px;
+    padding: 0 4px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .student-seat-main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .student-seat-name {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  @media (max-width: 767.98px) {
+    .student-seat-grid {
+      min-width: calc(24px + var(--cols) * 76px);
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+{% if current_session %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card mb-3 attendance-checkin-box shadow-sm">
+      <div class="card-header attendance-checkin-header py-2 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-check2-circle me-2"></i>เช็คชื่อเข้าเรียน ({{ current_session.classroom.name }})</span>
+        {% if can_check_in %}
+          <span class="badge bg-success-subtle text-success border border-success-subtle" id="studentCheckinTimerBadge">
+            <i class="bi bi-clock me-1"></i>เหลือ <span id="studentCheckinTimer">--:--</span>
+          </span>
+        {% else %}
+          <span class="badge bg-secondary">ปิดรับเช็คชื่อ</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <h6 class="fw-bold text-success-emphasis">{{ current_session.title }}</h6>
+        <div class="small text-muted mb-2">
+          ห้อง: <b>{{ current_session.classroom.name }}</b> · คะแนนเข้าเรียน: <b>+{{ current_session.attendance_points }}</b>
+        </div>
+
+        {% if my_record %}
+        <div class="alert alert-success border-success-subtle py-2 mb-3">
+          <div class="fw-bold"><i class="bi bi-check-circle-fill me-1"></i>คุณยืนยันการเข้าเรียนเรียบร้อยแล้ว!</div>
+          <div class="small">ที่นั่งของคุณ: <b>{{ my_record.seat_code }} (แถว {{ my_record.seat_row }}, คอลัมน์ {{ my_record.seat_col }})</b></div>
+          <div class="small">เวลา: {{ my_record.checked_at|date:"H:i:s" }}</div>
+        </div>
+        {% endif %}
+
+        {% if my_assigned_seat %}
+        <div class="alert bg-white border border-success-subtle py-2 px-3 small mb-3">
+          <i class="bi bi-pin-map-fill text-success me-1"></i>ที่นั่งประจำเลขที่ {{ user.class_number }}: <b>แถว {{ my_assigned_seat.0 }}, C{{ my_assigned_seat.1 }}</b>
+        </div>
+        {% endif %}
+
+        {% if can_check_in %}
+        <form method="post" id="studentCheckinForm">
+          {% csrf_token %}
+          <input type="hidden" name="seat_row" id="seatRowInput" value="{{ default_seat_row|default:1 }}">
+          <input type="hidden" name="seat_col" id="seatColInput" value="{{ default_seat_col|default:1 }}">
+          <button type="submit" class="btn btn-success btn-lg w-100 fw-bold shadow-sm py-3">
+            <i class="bi bi-check2-circle me-2"></i>ยืนยันการเข้าเรียน
+          </button>
+        </form>
+        <div class="small text-muted text-center mt-2">
+          <i class="bi bi-wifi me-1"></i>IP: <code>{{ client_ip }}</code> · คลิกเลือกที่นั่งบนแผนผังด้านขวาได้หากต้องการเปลี่ยน
+        </div>
+        {% else %}
+        <div class="alert alert-secondary border-0 py-2 mb-0 small" id="checkinClosedNotice">
+          <i class="bi bi-lock-fill me-1"></i>ขณะนี้ยังไม่ได้เปิดเช็คชื่อเข้าเรียนสำหรับชั้น/ห้อง {{ current_session.classroom.name }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span class="small fw-bold"><i class="bi bi-grid-3x3-gap-fill text-primary me-1"></i>แผนผังที่นั่งห้อง {{ current_session.classroom.name }}{% if lab_room %} <span class="badge bg-success-subtle text-success border border-success-subtle ms-1">{{ lab_room.name }}</span>{% endif %} (คลิกเลือกเก้าอี้ว่าง)</span>
+        <span class="badge bg-primary">เช็คชื่อแล้ว {{ current_session.records.count }} คน</span>
+      </div>
+      <div class="card-body p-2">
+        {% if board_position == 'top' %}
+        <div class="bg-dark text-warning text-center py-1 rounded mb-2 small fw-bold border border-warning">
+          <i class="bi bi-easel2-fill me-1"></i>กระดานดำ / หน้าชั้นเรียน / โต๊ะครูผู้สอน (ด้านบน)
+        </div>
+        {% else %}
+        <div class="text-center small text-muted mb-1" style="font-size:0.75rem;">
+          <i class="bi bi-door-open me-1"></i>ด้านหลังห้องเรียน &darr; มองไปยังกระดานดำด้านล่างสุด
+        </div>
+        {% endif %}
+
+        <div class="student-seat-grid-wrap">
+          <div class="student-seat-grid" style="--cols:{{ cols_range|length }};">
+            <div class="student-grid-corner">แถว</div>
+            {% for c in cols_range %}
+            <div class="student-grid-col-hdr">C{{ c }}</div>
+            {% endfor %}
+
+            {% for r in rows_range %}
+              <div class="student-grid-row-hdr">R{{ r }}</div>
+              {% for c in cols_range %}
+                {% seat_key r c as key %}
+                {% with rec=seat_map|get_item:key custom_lbl=custom_labels|get_item:key assigned_no=seat_numbers|get_item:key %}
+                {% if key in disabled_seats %}
+                <div class="student-seat-cell is-disabled" title="{% if custom_lbl %}เครื่อง {{ custom_lbl }}{% else %}แถว {{ r }}, C{{ c }}{% endif %} (ทางเดิน)">
+                  <span style="font-size:0.65rem;">ทางเดิน</span>
+                </div>
+                {% else %}
+                <div id="studentSeatCell_{{ key }}"
+                     onclick="selectSeat({{ r }}, {{ c }})"
+                     title="{% if custom_lbl %}เครื่อง {{ custom_lbl }}{% else %}แถว {{ r }}, C{{ c }}{% endif %}{% if assigned_no %} · เลขที่ {{ assigned_no }}{% endif %}"
+                     class="student-seat-cell {% if rec %}{% if rec.student_id == user.id %}is-mine{% else %}is-taken{% endif %}{% elif assigned_no == user.class_number %}is-assigned-me{% endif %}">
+                  <div class="student-seat-top">
+                    <span class="student-seat-lbl">{% if custom_lbl %}เครื่อง {{ custom_lbl }}{% else %}R{{ r }} C{{ c }}{% endif %}</span>
+                    {% if assigned_no %}
+                      <span class="student-seat-no">{% if assigned_no < 10 %}0{{ assigned_no }}{% else %}{{ assigned_no }}{% endif %}</span>
+                    {% endif %}
+                  </div>
+                  {% if rec %}
+                  <div class="student-seat-main">
+                    {% if rec.student.avatar_url %}
+                      <img src="{{ rec.student.avatar_url }}" class="avatar-circle" style="width:20px;height:20px;">
+                    {% else %}
+                      <span class="avatar-circle" style="width:20px;height:20px;font-size:0.6rem;">{{ rec.student.avatar_initial }}</span>
+                    {% endif %}
+                    <span class="student-seat-name">{{ rec.student.first_name }}</span>
+                  </div>
+                  {% else %}
+                  <div class="student-seat-main text-muted" style="font-size:0.68rem;">
+                    <i class="bi bi-plus-circle"></i>
+                    <span>ว่าง</span>
+                  </div>
+                  {% endif %}
+                </div>
+                {% endif %}
+                {% endwith %}
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+
+        {% if board_position != 'top' %}
+        <div class="bg-dark text-warning text-center py-2 rounded mt-2 small fw-bold border border-2 border-warning shadow-sm">
+          <i class="bi bi-easel2-fill me-1"></i>กระดานดำ / หน้าชั้นเรียน / โต๊ะครูผู้สอน (อยู่ด้านล่างสุด)
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function selectSeat(r, c) {
+  const rowIn = document.getElementById('seatRowInput');
+  const colIn = document.getElementById('seatColInput');
+  if (!rowIn || !colIn) return;
+  rowIn.value = r;
+  colIn.value = c;
+  document.querySelectorAll('.student-seat-cell.is-selected').forEach(el => el.classList.remove('is-selected'));
+  const cell = document.getElementById(`studentSeatCell_${r}_${c}`);
+  if (cell) cell.classList.add('is-selected');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const r = document.getElementById('seatRowInput')?.value;
+  const c = document.getElementById('seatColInput')?.value;
+  if (r && c) {
+    const cell = document.getElementById(`studentSeatCell_${r}_${c}`);
+    if (cell) cell.classList.add('is-selected');
+  }
+  const timerEl = document.getElementById('studentCheckinTimer');
+  let remSec = Number({{ remaining_seconds|default:0 }});
+  if (timerEl && remSec > 0) {
+    const fmt = (sec) => {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+    timerEl.textContent = fmt(remSec);
+    const iv = setInterval(() => {
+      remSec = Math.max(0, remSec - 1);
+      timerEl.textContent = fmt(remSec);
+      if (remSec <= 0) {
+        clearInterval(iv);
+        window.location.reload();
+      }
+    }, 1000);
+  }
+});
+</script>
+{% else %}
+<div class="card attendance-checkin-box shadow-sm">
+  <div class="card-header attendance-checkin-header py-2">
+    <i class="bi bi-grid-3x3-gap-fill me-2"></i>เช็คชื่อเข้าเรียน{% if student_classroom %} ({{ student_classroom.name }}){% endif %}
+  </div>
+  <div class="card-body">
+    <div class="alert alert-light border border-success-subtle mb-0">
+      <i class="bi bi-lock-fill text-secondary me-2"></i>ขณะนี้ยังไม่ได้เปิดการเช็คชื่อเข้าเรียนสำหรับชั้น/ห้องของนักเรียน{% if student_classroom %} (<b>{{ student_classroom.name }}</b>){% endif %} — เมื่อครูผู้สอนเปิดเช็คชื่อ (รอบละ 25 นาที) ปุ่มยืนยันการเข้าเรียนจะแสดงขึ้นที่นี่โดยอัตโนมัติ
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

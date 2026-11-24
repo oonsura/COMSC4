@@ -1,0 +1,772 @@
+{% extends 'base.html' %}
+{% block title %}DSBasicSorting - กิจกรรมเรียงลำดับข้อมูล COMSC4{% endblock %}
+{% block page_header %}กิจกรรมเรียงลำดับข้อมูล (DSBasicSorting - Bubble ฟองสบู่ / Selection แบบเลือก / Insertion แบบแทรก){% endblock %}
+{% block extra_css %}
+<style>
+  .ds-panel {
+    background: #f8fafc;
+    border: 2px solid #cbd5e1;
+    border-radius: 14px;
+  }
+  .unit-pill {
+    min-width: 46px;
+    font-weight: 700;
+  }
+  .unit-pill.active {
+    background-color: #0d6efd !important;
+    color: #fff !important;
+    border-color: #0d6efd !important;
+    box-shadow: 0 2px 6px rgba(13,110,253,0.35);
+  }
+  .ds-grid-table th {
+    background: #1e293b;
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 0.55rem 0.35rem;
+  }
+  .ds-init-row td {
+    background-color: #fef08a !important;
+    color: #1d4ed8 !important;
+    font-size: 1.45rem;
+    font-weight: 900;
+    border-color: #eab308 !important;
+  }
+  .pass-input {
+    width: 62px;
+    height: 46px;
+    text-align: center;
+    font-size: 1.25rem;
+    font-weight: 800;
+    border-radius: 8px;
+    border: 2px solid #94a3b8;
+    background: #fff;
+    color: #0f172a;
+    transition: all 0.12s ease;
+  }
+  .pass-input:focus {
+    border-color: #16a34a;
+    background-color: #f0fdf4;
+    box-shadow: 0 0 0 3px rgba(22,163,74,0.2);
+    outline: none;
+  }
+  .pass-input.row-locked {
+    background-color: #eff6ff !important;
+    color: #1d4ed8 !important;
+    border-color: #3b82f6 !important;
+    cursor: default;
+  }
+  .counter-card {
+    border-radius: 12px;
+    padding: 0.65rem 0.75rem;
+    text-align: center;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+  }
+  .counter-val {
+    font-size: 1.6rem;
+    font-weight: 900;
+    line-height: 1.1;
+  }
+  .history-listbox {
+    max-height: 290px;
+    overflow-y: auto;
+    font-family: 'Sarabun', monospace;
+    font-size: 0.84rem;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+  }
+</style>
+{% endblock %}
+{% block content %}
+{% if current_activity %}
+<div class="alert alert-success d-flex flex-wrap justify-content-between align-items-center gap-2 py-2 mb-3">
+  <div class="d-flex align-items-center gap-2 small fw-semibold">
+    <span class="badge bg-success"><i class="bi bi-broadcast me-1"></i>เชื่อมต่อสดกับผู้ดูแล</span>
+    <span>{{ user.room_display }} เลขที่ {{ user.class_number }} [{{ user.student_id|default:user.username }}] {{ user.get_full_name }}</span>
+    <span class="badge bg-dark" id="sessionBadge">เซสชัน #{{ current_activity.session_no }}</span>
+  </div>
+  <form method="get" class="d-flex align-items-center gap-2">
+    <label class="small fw-bold mb-0">กิจกรรม:</label>
+    <select name="activity_id" class="form-select form-select-sm" style="min-width:250px;" onchange="this.form.submit()">
+      {% for act in activities %}
+      <option value="{{ act.id }}" {% if act.id == current_activity.id %}selected{% endif %}>
+        {{ act.title }} {% if act.is_exam_mode %}[โหมดสอบ]{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+<div id="broadcastAlert" class="alert alert-warning fw-bold d-none shadow-sm mb-3"></div>
+
+<div class="row g-3">
+  <!-- ฝั่งซ้าย: แผงควบคุม + ตารางเรียงลำดับทีละรอบ (เหมือน DSbasicsorting Form1.cs) -->
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header bg-dark text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span><i class="bi bi-bar-chart-steps text-warning me-2"></i>{{ current_activity.title }}</span>
+        <span class="badge {% if student_in_exam %}bg-danger{% else %}bg-success{% endif %}" id="modeBadge">
+          {% if student_in_exam %}โหมดสอบ (กำลังสอบพร้อมกัน — Top {{ current_activity.top_x_reward }} รับคะแนนบวก){% else %}โหมดฝึกฝนอิสระ (ฝึกได้ตลอดเวลา){% endif %}
+        </span>
+      </div>
+      <div class="card-body">
+        <!-- แถบตั้งค่ารูปแบบการเรียง (ไม่มี numericUpDown) -->
+        <div class="ds-panel p-3 mb-3">
+          <div class="row g-3 align-items-center">
+            <div class="col-md-5">
+              <div class="small fw-bold text-primary mb-1"><i class="bi bi-cpu me-1"></i>1. เลือกวิธีเรียงลำดับ (Sort Type)</div>
+              <div class="btn-group w-100" role="group">
+                <input type="radio" class="btn-check" name="sortType" id="stBubble" value="bubble" checked>
+                <label class="btn btn-outline-primary btn-sm fw-bold" for="stBubble">Bubble (ฟองสบู่)</label>
+
+                <input type="radio" class="btn-check" name="sortType" id="stSelection" value="selection">
+                <label class="btn btn-outline-primary btn-sm fw-bold" for="stSelection">Selection (แบบเลือก)</label>
+
+                <input type="radio" class="btn-check" name="sortType" id="stInsertion" value="insertion">
+                <label class="btn btn-outline-primary btn-sm fw-bold" for="stInsertion">Insertion (แบบแทรก)</label>
+              </div>
+            </div>
+
+            <div class="col-md-3">
+              <div class="small fw-bold text-primary mb-1"><i class="bi bi-arrow-down-up me-1"></i>2. ลำดับ (Order)</div>
+              <div class="btn-group w-100" role="group">
+                <input type="radio" class="btn-check" name="sortOrder" id="ordAsc" value="asc" checked>
+                <label class="btn btn-outline-success btn-sm fw-bold" for="ordAsc">น้อย &gt;&gt; มาก</label>
+
+                <input type="radio" class="btn-check" name="sortOrder" id="ordDesc" value="desc">
+                <label class="btn btn-outline-success btn-sm fw-bold" for="ordDesc">มาก &gt;&gt; น้อย</label>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <div class="small fw-bold text-primary mb-1"><i class="bi bi-123 me-1"></i>3. จำนวนตัวเลข (สุ่ม 5–9 หรือเลือกเอง)</div>
+              <div class="btn-group btn-group-sm flex-wrap" role="group" id="unitPillsGroup">
+                <button type="button" class="btn btn-outline-secondary unit-pill" data-unit="4" onclick="selectUnitCount(4)">สุ่ม</button>
+                <button type="button" class="btn btn-outline-secondary unit-pill" data-unit="5" onclick="selectUnitCount(5)">5</button>
+                <button type="button" class="btn btn-outline-secondary unit-pill" data-unit="6" onclick="selectUnitCount(6)">6</button>
+                <button type="button" class="btn btn-outline-secondary unit-pill active" data-unit="7" onclick="selectUnitCount(7)">7</button>
+                <button type="button" class="btn btn-outline-secondary unit-pill" data-unit="8" onclick="selectUnitCount(8)">8</button>
+                <button type="button" class="btn btn-outline-secondary unit-pill" data-unit="9" onclick="selectUnitCount(9)">9</button>
+                <button type="button" class="btn btn-outline-secondary unit-pill" data-unit="10" onclick="selectUnitCount(10)">10</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2 mt-3 pt-2 border-top">
+            <button type="button" id="btnStartSort" class="btn btn-success fw-bold px-4" onclick="startSortingGame(false)">
+              <i class="bi bi-play-fill me-1"></i>เริ่มเรียง
+            </button>
+            <button type="button" id="btnResetSort" class="btn btn-warning fw-bold px-3" onclick="resetSortingGame()" disabled>
+              <i class="bi bi-arrow-counterclockwise me-1"></i>RESET
+            </button>
+            <button type="button" id="btnCheckRound" class="btn btn-primary fw-bold px-4 ms-auto" onclick="verifyCurrentRound()" disabled>
+              <i class="bi bi-check2-circle me-1"></i>ตรวจสอบ (Enter)
+            </button>
+          </div>
+        </div>
+
+        <!-- คำแนะนำการใช้งานเหมือน Form1.cs -->
+        <div class="alert alert-light border small py-2 mb-3">
+          <i class="bi bi-keyboard me-1 text-primary"></i>
+          <b>วิธีใช้งาน:</b> กด <b>เริ่มเรียง</b> เพื่อสุ่มตัวเลข 1–15 (ไม่ซ้ำ) · พิมพ์คำตอบแต่ละรอบจากซ้ายไปขวา · กด <code>Enter</code> เพื่อเลื่อนช่องถัดไป (ช่องสุดท้ายกด <code>Enter</code> เพื่อตรวจทันที) · กด <code>Backspace</code> เพื่อย้อนกลับ
+        </div>
+
+        <div id="feedbackAlert" class="alert d-none mb-3 fw-bold"></div>
+
+        <!-- ตาราง DataGridView แสดงข้อมูลตั้งต้น + รอบที่ 1..N -->
+        <div class="table-responsive">
+          <table class="table table-bordered align-middle text-center mb-0 ds-grid-table" id="sortingGridTable">
+            <thead id="gridHeaderHead">
+              <tr><th style="width:120px;">รอบ / ขั้นตอน</th></tr>
+            </thead>
+            <tbody id="gridBodyRows">
+              <tr><td class="text-muted py-5" colspan="8">กดปุ่ม <b>"เริ่มเรียง"</b> ด้านบน หรือรอรับคำสั่ง <b>PLAY</b> จากครูผู้สอนเพื่อเริ่มกิจกรรม</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ฝั่งขวา: ตัวนับคะแนนเวลา + ประวัติการเรียงแต่ละรอบ (listBox1 ใน Form1.cs) -->
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header bg-primary text-white fw-bold">
+        <i class="bi bi-speedometer2 me-2"></i>สถานะการเล่น &amp; คะแนนสะสม
+      </div>
+      <div class="card-body">
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <div class="counter-card">
+              <div class="small text-muted fw-bold">จำนวนครั้ง (re)</div>
+              <div class="counter-val text-dark" id="reCounter">{{ my_next_round_no }}</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="counter-card">
+              <div class="small text-muted fw-bold">เวลา (วินาที)</div>
+              <div class="counter-val text-primary" id="timerSec">0</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="counter-card">
+              <div class="small text-muted fw-bold">ถูก (รอบ)</div>
+              <div class="counter-val text-success"><span id="rightCount">0</span>/<span id="totalStepsCount">0</span></div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="counter-card">
+              <div class="small text-muted fw-bold">ผิด (ครั้ง)</div>
+              <div class="counter-val text-danger" id="wrongCount">0</div>
+            </div>
+          </div>
+        </div>
+        <div class="counter-card bg-warning-subtle border-warning">
+          <div class="small fw-bold text-dark">คะแนนสะสมรวมในรอบนี้</div>
+          <div class="counter-val text-success" style="font-size:2.1rem;" id="totalScoreDisplay">{{ my_cumulative_score|floatformat:2 }}</div>
+          <div class="text-muted" style="font-size:0.72rem;">สูตร: ((ถูก × 10) - (ผิด × 2)) - (เวลา ÷ จำนวนตัวเลข)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-check text-primary me-2"></i>ประวัติคะแนนรอบนี้ (ListBox)</span>
+        <span class="badge bg-secondary" id="sessionHistoryCount">{{ my_session_rounds|length }} รอบ</span>
+      </div>
+      <div class="card-body p-2">
+        <div class="history-listbox list-group list-group-flush" id="roundHistoryList">
+          {% for r in my_session_rounds %}
+          <div class="list-group-item py-2 px-2">
+            <div class="fw-bold text-dark">{{ r.algorithm_detail }}</div>
+            <div class="text-muted" style="font-size:0.72rem;">สะสมรวม: <b>{{ r.cumulative_score|floatformat:2 }}</b> คะแนน ({{ r.created_at|date:"H:i:s" }})</div>
+          </div>
+          {% empty %}
+          <div class="text-center text-muted py-4 small" id="emptyHistoryHint">ยังไม่มีคะแนนที่ส่งในเซสชันนี้</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="bi bi-trophy-fill text-warning me-2"></i>สถิติคะแนนสูงสุดของคุณ</div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for sc in top_scores|slice:":6" %}
+          <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div class="small">
+              <span class="badge bg-primary me-1">#{{ forloop.counter }}</span>
+              <b>รอบที่ {{ sc.play_round_no }}</b>
+              <span class="text-muted ms-1" style="font-size:0.74rem;">({{ sc.created_at|date:"d/m H:i" }})</span>
+            </div>
+            <span class="badge bg-success">{{ sc.cumulative_score|floatformat:2 }}</span>
+          </li>
+          {% empty %}
+          <li class="list-group-item text-center text-muted small py-3">ยังไม่มีประวัติคะแนนของคุณ</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body text-center text-muted py-5">ยังไม่มีกิจกรรมเรียงลำดับที่เปิดอยู่</div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if current_activity %}
+<script>
+const ACTIVITY_ID = {{ current_activity.id }};
+const CSRF_TOKEN = '{{ csrf_token }}';
+const PRESET_DATASET = {{ initial_nums_json|safe }};
+const INITIAL_MODE = '{{ current_activity.mode|escapejs }}';
+const INITIAL_UNIT = {{ current_activity.unit_count|default:7 }};
+const TOP_X_REWARD = {{ current_activity.top_x_reward|default:5 }};
+const INIT_BROADCAST = {{ broadcast_state_json|safe }};
+
+let selectedUnitSetting = (INITIAL_UNIT >= 5 && INITIAL_UNIT <= 10) ? INITIAL_UNIT : 7;
+let activeUnit = selectedUnitSetting;
+let playRoundNo = {{ my_next_round_no|default:1 }};
+let cumulativeScore = parseFloat('{{ my_cumulative_score|default:0 }}') || 0;
+let lastBroadcastSeq = INIT_BROADCAST.broadcast_seq || 0;
+let lastSessionNo = INIT_BROADCAST.session_no || 1;
+
+let initialNumbers = [];
+let expectedSteps = [];
+let currentRoundIdx = 0;
+let rightRounds = 0;
+let wrongAttempts = 0;
+let elapsedSec = 0;
+let isPlaying = false;
+let isExamPlayLock = false;
+let timerHandle = null;
+let firstRunUsedPreset = false;
+
+// Audio feedback without external audio files
+function playTone(freq, durationMs, type = 'sine') {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationMs / 1000);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + durationMs / 1000);
+  } catch (e) {}
+}
+
+function getSelectedSortType() {
+  const checked = document.querySelector('input[name="sortType"]:checked');
+  return checked ? checked.value : 'bubble';
+}
+
+function getSelectedSortOrder() {
+  const checked = document.querySelector('input[name="sortOrder"]:checked');
+  return checked ? checked.value : 'asc';
+}
+
+function setSortType(val) {
+  const idMap = { bubble: 'stBubble', selection: 'stSelection', insertion: 'stInsertion' };
+  const el = document.getElementById(idMap[val] || 'stBubble');
+  if (el) el.checked = true;
+}
+
+function setSortOrder(val) {
+  const el = document.getElementById(val === 'desc' ? 'ordDesc' : 'ordAsc');
+  if (el) el.checked = true;
+}
+
+function selectUnitCount(val) {
+  if (isPlaying) return;
+  selectedUnitSetting = parseInt(val);
+  document.querySelectorAll('#unitPillsGroup .unit-pill').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.unit) === selectedUnitSetting);
+  });
+}
+
+// Init defaults from current activity mode
+(function initControls() {
+  const m = (INITIAL_MODE || '').toLowerCase();
+  if (m.startsWith('sel')) setSortType('selection');
+  else if (m.startsWith('ins')) setSortType('insertion');
+  else setSortType('bubble');
+  setSortOrder(m.includes('desc') ? 'desc' : 'asc');
+  selectUnitCount(selectedUnitSetting);
+})();
+
+// Exact port of Form1.cs BuildBubbleSort / BuildSelectionSort / BuildInsertionSort
+function buildExpectedSteps(arr, sortType, sortOrder) {
+  const n = arr.length;
+  const isAsc = (sortOrder !== 'desc');
+  const steps = [];
+  let cur = [...arr];
+
+  if (sortType === 'bubble') {
+    for (let i = 1; i <= n; i++) {
+      cur = [...cur];
+      for (let j = 0; j < n - 1; j++) {
+        if ((isAsc && cur[j] > cur[j + 1]) || (!isAsc && cur[j] < cur[j + 1])) {
+          const tmp = cur[j];
+          cur[j] = cur[j + 1];
+          cur[j + 1] = tmp;
+        }
+      }
+      steps.push([...cur]);
+    }
+  } else if (sortType === 'selection') {
+    for (let i = 1; i <= n; i++) {
+      cur = [...cur];
+      const pos = i - 1;
+      let targetIdx = pos;
+      for (let j = pos + 1; j < n; j++) {
+        if ((isAsc && cur[j] < cur[targetIdx]) || (!isAsc && cur[j] > cur[targetIdx])) {
+          targetIdx = j;
+        }
+      }
+      const tmp = cur[pos];
+      cur[pos] = cur[targetIdx];
+      cur[targetIdx] = tmp;
+      steps.push([...cur]);
+    }
+  } else {
+    // Insertion Sort (Form1.cs)
+    for (let i = 1; i <= n; i++) {
+      cur = [...cur];
+      if (i > 1) {
+        const key = cur[i - 1];
+        let j = i - 2;
+        if (isAsc) {
+          while (j >= 0 && cur[j] > key) {
+            cur[j + 1] = cur[j];
+            j--;
+          }
+        } else {
+          while (j >= 0 && cur[j] < key) {
+            cur[j + 1] = cur[j];
+            j--;
+          }
+        }
+        cur[j + 1] = key;
+      }
+      steps.push([...cur]);
+    }
+  }
+  return steps;
+}
+
+function generateUniqueRandom1To15(count) {
+  const pool = [];
+  for (let i = 1; i <= 15; i++) pool.push(i);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, count);
+}
+
+function setControlsLocked(locked) {
+  document.querySelectorAll('input[name="sortType"], input[name="sortOrder"]').forEach(el => {
+    el.disabled = locked;
+  });
+  document.querySelectorAll('#unitPillsGroup .unit-pill').forEach(btn => {
+    btn.disabled = locked;
+  });
+  document.getElementById('btnStartSort').disabled = locked;
+  document.getElementById('btnCheckRound').disabled = !locked;
+  const resetBtn = document.getElementById('btnResetSort');
+  if (isExamPlayLock && locked) {
+    resetBtn.disabled = true;
+    resetBtn.innerText = 'ทดสอบ';
+  } else {
+    resetBtn.disabled = !locked;
+    resetBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>RESET';
+  }
+}
+
+function buildSortingGrid() {
+  const thead = document.getElementById('gridHeaderHead');
+  let hHtml = '<tr><th style="width:120px;">รอบ / ขั้นตอน</th>';
+  for (let c = 1; c <= activeUnit; c++) {
+    hHtml += `<th>ตำแหน่ง ${c}</th>`;
+  }
+  hHtml += '</tr>';
+  thead.innerHTML = hHtml;
+
+  const tbody = document.getElementById('gridBodyRows');
+  tbody.innerHTML = '';
+
+  // Row 0: ข้อมูล (Yellow bg, Blue bold text)
+  const tr0 = document.createElement('tr');
+  tr0.className = 'ds-init-row';
+  tr0.innerHTML = `<td>ข้อมูล</td>` + initialNumbers.map(n => `<td>${n}</td>`).join('');
+  tbody.appendChild(tr0);
+
+  // Row 1..activeUnit
+  for (let r = 0; r < activeUnit; r++) {
+    const tr = document.createElement('tr');
+    tr.id = `roundRow_${r}`;
+    if (r > 0) tr.classList.add('d-none');
+    let html = `<td class="fw-bold bg-light">รอบที่ ${r + 1}</td>`;
+    for (let c = 0; c < activeUnit; c++) {
+      html += `<td><input type="text" inputmode="numeric" maxlength="2" autocomplete="off" class="pass-input" id="cell_${r}_${c}" data-round="${r}" data-col="${c}"></td>`;
+    }
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  }
+
+  document.querySelectorAll('.pass-input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      inp.value = inp.value.replace(/[^0-9]/g, '');
+    });
+    inp.addEventListener('keydown', (e) => {
+      if (inp.readOnly) return;
+      const r = parseInt(inp.dataset.round);
+      const c = parseInt(inp.dataset.col);
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (c + 1 < activeUnit) {
+          document.getElementById(`cell_${r}_${c + 1}`).focus();
+        } else {
+          verifyCurrentRound();
+        }
+      } else if (e.key === 'Backspace' && inp.value === '' && c > 0) {
+        e.preventDefault();
+        const prev = document.getElementById(`cell_${r}_${c - 1}`);
+        if (prev && !prev.readOnly) {
+          prev.value = '';
+          prev.focus();
+        }
+      } else if (e.key === 'Delete') {
+        inp.value = '';
+      } else if (e.key === 'ArrowRight' && c + 1 < activeUnit) {
+        document.getElementById(`cell_${r}_${c + 1}`).focus();
+      } else if (e.key === 'ArrowLeft' && c > 0) {
+        document.getElementById(`cell_${r}_${c - 1}`).focus();
+      }
+    });
+  });
+}
+
+function startSortingGame(fromBroadcast = false) {
+  if (timerHandle) clearInterval(timerHandle);
+
+  activeUnit = selectedUnitSetting === 4 ? (Math.floor(Math.random() * 5) + 5) : selectedUnitSetting;
+  if (!fromBroadcast && !firstRunUsedPreset && PRESET_DATASET.length === activeUnit && PRESET_DATASET.length >= 4) {
+    initialNumbers = [...PRESET_DATASET];
+    firstRunUsedPreset = true;
+  } else {
+    initialNumbers = generateUniqueRandom1To15(activeUnit);
+  }
+
+  const sortType = getSelectedSortType();
+  const sortOrder = getSelectedSortOrder();
+  expectedSteps = buildExpectedSteps(initialNumbers, sortType, sortOrder);
+
+  currentRoundIdx = 0;
+  rightRounds = 0;
+  wrongAttempts = 0;
+  elapsedSec = 0;
+  isPlaying = true;
+  isExamPlayLock = fromBroadcast;
+
+  document.getElementById('timerSec').innerText = '0';
+  document.getElementById('rightCount').innerText = '0';
+  document.getElementById('totalStepsCount').innerText = activeUnit;
+  document.getElementById('wrongCount').innerText = '0';
+  document.getElementById('feedbackAlert').classList.add('d-none');
+
+  buildSortingGrid();
+  setControlsLocked(true);
+  sendProgress(1, 0);
+
+  timerHandle = setInterval(() => {
+    if (isPlaying) {
+      elapsedSec++;
+      document.getElementById('timerSec').innerText = elapsedSec;
+    }
+  }, 1000);
+
+  const firstCell = document.getElementById('cell_0_0');
+  if (firstCell) firstCell.focus();
+}
+
+function showFeedback(msg, type) {
+  const el = document.getElementById('feedbackAlert');
+  el.className = `alert alert-${type} fw-bold mb-3`;
+  el.innerHTML = msg;
+  el.classList.remove('d-none');
+}
+
+function sendProgress(curRound, wrongCnt) {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('current_round', curRound);
+  fd.append('total_rounds', activeUnit);
+  fd.append('attempts', wrongCnt);
+  fd.append('time_used', elapsedSec);
+  fd.append('session_no', lastSessionNo);
+  fetch(`/api/sorting/${ACTIVITY_ID}/progress/`, { method: 'POST', body: fd });
+}
+
+function verifyCurrentRound() {
+  if (!isPlaying || currentRoundIdx >= activeUnit) return;
+  const expected = expectedSteps[currentRoundIdx];
+  const userVals = [];
+  for (let c = 0; c < activeUnit; c++) {
+    const inp = document.getElementById(`cell_${currentRoundIdx}_${c}`);
+    const v = parseInt(inp.value, 10);
+    if (isNaN(v)) {
+      playTone(220, 180, 'square');
+      showFeedback(`<i class="bi bi-exclamation-triangle-fill me-1"></i>กรุณากรอกตัวเลขให้ครบทั้ง ${activeUnit} ช่องในรอบที่ ${currentRoundIdx + 1}`, 'warning');
+      inp.focus();
+      return;
+    }
+    userVals.push(v);
+  }
+
+  let ok = true;
+  for (let c = 0; c < activeUnit; c++) {
+    if (userVals[c] !== expected[c]) {
+      ok = false;
+      break;
+    }
+  }
+
+  if (!ok) {
+    wrongAttempts++;
+    document.getElementById('wrongCount').innerText = wrongAttempts;
+    playTone(190, 220, 'sawtooth');
+    sendProgress(currentRoundIdx + 1, wrongAttempts);
+    showFeedback(`--- คุณเรียงลำดับรอบที่ ${currentRoundIdx + 1} ไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง! ---`, 'danger');
+    const c0 = document.getElementById(`cell_${currentRoundIdx}_0`);
+    if (c0) c0.focus();
+    return;
+  }
+
+  // รอบนี้ถูกต้อง
+  rightRounds++;
+  document.getElementById('rightCount').innerText = rightRounds;
+  playTone(660, 110, 'sine');
+  for (let c = 0; c < activeUnit; c++) {
+    const inp = document.getElementById(`cell_${currentRoundIdx}_${c}`);
+    inp.readOnly = true;
+    inp.classList.add('row-locked');
+  }
+
+  currentRoundIdx++;
+  if (currentRoundIdx < activeUnit) {
+    const nextRow = document.getElementById(`roundRow_${currentRoundIdx}`);
+    if (nextRow) nextRow.classList.remove('d-none');
+    sendProgress(currentRoundIdx + 1, wrongAttempts);
+    showFeedback(`<i class="bi bi-check-circle-fill me-1"></i>รอบที่ ${currentRoundIdx} ถูกต้อง! พิมพ์คำตอบรอบที่ ${currentRoundIdx + 1} ต่อได้ทันที`, 'success');
+    const nextCell = document.getElementById(`cell_${currentRoundIdx}_0`);
+    if (nextCell) nextCell.focus();
+  } else {
+    submitFinishedRound();
+  }
+}
+
+function resetSortingGame() {
+  if (!isPlaying) return;
+  if (isExamPlayLock) return;
+  if (!confirm('คุณกำลังเรียงลำดับอยู่ หากกด RESET ระบบจะบันทึกคะแนนตามรอบที่ทำถูกไปแล้วและเริ่มครั้งถัดไป ต้องการ RESET หรือไม่?')) {
+    return;
+  }
+  submitFinishedRound(true);
+}
+
+function submitFinishedRound(isResetEarly = false) {
+  isPlaying = false;
+  if (timerHandle) clearInterval(timerHandle);
+  isExamPlayLock = false;
+  setControlsLocked(false);
+
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('right_rounds', rightRounds);
+  fd.append('attempts', wrongAttempts);
+  fd.append('time_used', elapsedSec);
+  fd.append('unit_count', activeUnit);
+  fd.append('passed_count', currentRoundIdx);
+  fd.append('sort_type', getSelectedSortType());
+  fd.append('sort_order', getSelectedSortOrder());
+  fd.append('session_no', lastSessionNo);
+
+  fetch(`/api/sorting/${ACTIVITY_ID}/submit/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      cumulativeScore = data.cumulative_score;
+      playRoundNo = (data.play_round_no || playRoundNo) + 1;
+      document.getElementById('reCounter').innerText = playRoundNo;
+      document.getElementById('totalScoreDisplay').innerText = cumulativeScore.toFixed(2);
+
+      const emptyHint = document.getElementById('emptyHistoryHint');
+      if (emptyHint) emptyHint.remove();
+      const histEl = document.getElementById('roundHistoryList');
+      const div = document.createElement('div');
+      div.className = 'list-group-item py-2 px-2 bg-success-subtle';
+      div.innerHTML = `<div class="fw-bold text-dark">${data.algorithm_detail}</div>` +
+        `<div class="text-muted" style="font-size:0.72rem;">สะสมรวม: <b>${data.cumulative_score.toFixed(2)}</b> คะแนน</div>`;
+      histEl.appendChild(div);
+      histEl.scrollTop = histEl.scrollHeight;
+      document.getElementById('sessionHistoryCount').innerText = `${data.play_round_no} รอบ`;
+
+      if (isResetEarly) {
+        document.getElementById('gridBodyRows').innerHTML =
+          `<tr><td class="text-muted py-4" colspan="${activeUnit + 1}">บันทึกคะแนนรอบก่อนหน้าแล้ว — กดปุ่ม <b>"เริ่มเรียง"</b> เพื่อเริ่มครั้งที่ ${playRoundNo}</td></tr>`;
+        showFeedback(`บันทึกผลตามรอบที่ทำแล้ว (+${data.score.toFixed(2)} คะแนน · สะสม ${cumulativeScore.toFixed(2)}) พร้อมเริ่มรอบใหม่`, 'info');
+      } else {
+        playTone(880, 180, 'triangle');
+        showFeedback(
+          `<i class="bi bi-trophy-fill me-2"></i>เรียงลำดับเสร็จสมบูรณ์! รอบนี้ได้ <b>${data.score.toFixed(2)} คะแนน</b> · คะแนนสะสมรวม <b>${cumulativeScore.toFixed(2)} คะแนน</b> (กด "เริ่มเรียง" เพื่อเล่นครั้งที่ ${playRoundNo} เพิ่มคะแนนสะสมได้)`,
+          'success'
+        );
+      }
+    });
+}
+
+function sendHeartbeat() {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fetch(`/api/sorting/${ACTIVITY_ID}/heartbeat/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      document.getElementById('sessionBadge').innerText = `เซสชัน #${data.session_no}`;
+      const modeBadgeEl = document.getElementById('modeBadge');
+      if (modeBadgeEl && typeof data.student_in_exam !== 'undefined') {
+        if (data.student_in_exam) {
+          modeBadgeEl.className = 'badge bg-danger';
+          modeBadgeEl.textContent = `โหมดสอบ (กำลังสอบพร้อมกัน — Top ${TOP_X_REWARD || 5} รับคะแนนบวก)`;
+        } else {
+          modeBadgeEl.className = 'badge bg-success';
+          modeBadgeEl.textContent = 'โหมดฝึกฝนอิสระ (ฝึกได้ตลอดเวลา)';
+        }
+      }
+
+      // ตรวจจับคำสั่ง PLAY จากผู้ดูแล (รองรับเลือกหลายห้อง เช่น "01,02")
+      if (data.broadcast_seq > lastBroadcastSeq) {
+        lastBroadcastSeq = data.broadcast_seq;
+        lastSessionNo = data.session_no;
+        const targetRoom = (data.broadcast_room_code || '').trim();
+        const targetRooms = targetRoom ? targetRoom.split(',').map(x => x.trim()).filter(Boolean) : [];
+        const roomMatches = targetRooms.length === 0
+          || (targetRoom.startsWith('grade:') ? targetRoom.slice(6) === (data.student_grade_level || '') : targetRooms.includes(data.student_room_code));
+        if (roomMatches) {
+          cumulativeScore = 0;
+          playRoundNo = 1;
+          document.getElementById('reCounter').innerText = '1';
+          document.getElementById('totalScoreDisplay').innerText = '0.00';
+          document.getElementById('roundHistoryList').innerHTML =
+            '<div class="text-center text-muted py-4 small" id="emptyHistoryHint">ยังไม่มีคะแนนที่ส่งในเซสชันนี้</div>';
+          document.getElementById('sessionHistoryCount').innerText = '0 รอบ';
+
+          setSortType(data.broadcast_sort);
+          setSortOrder(data.broadcast_order);
+          selectUnitCount(data.broadcast_unit);
+
+          const sortThaiMap = {
+            bubble: 'Bubble Sort (การเรียงแบบฟองสบู่)',
+            selection: 'Selection Sort (การเรียงแบบเลือก)',
+            insertion: 'Insertion Sort (การเรียงแบบแทรก)'
+          };
+          const bAlert = document.getElementById('broadcastAlert');
+          bAlert.innerHTML = `<i class="bi bi-megaphone-fill me-2"></i>ผู้ดูแลกด PLAY! เริ่มเรียงลำดับพร้อมกันทันที (${sortThaiMap[data.broadcast_sort] || data.broadcast_sort} · ${data.broadcast_order === 'desc' ? 'มาก >> น้อย' : 'น้อย >> มาก'})`;
+          bAlert.classList.remove('d-none');
+          startSortingGame(true);
+          return;
+        }
+      }
+
+      // กรณีผู้ดูแลกด New Session โดยไม่ได้กด PLAY
+      if (data.session_no !== lastSessionNo) {
+        lastSessionNo = data.session_no;
+        cumulativeScore = 0;
+        playRoundNo = 1;
+        document.getElementById('reCounter').innerText = '1';
+        document.getElementById('totalScoreDisplay').innerText = '0.00';
+        document.getElementById('roundHistoryList').innerHTML =
+          '<div class="text-center text-muted py-4 small" id="emptyHistoryHint">เริ่มเซสชันใหม่แล้ว ยังไม่มีคะแนนในเซสชันนี้</div>';
+        document.getElementById('sessionHistoryCount').innerText = '0 รอบ';
+      }
+    })
+    .catch(() => {});
+}
+
+sendHeartbeat();
+setInterval(sendHeartbeat, 2500);
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,717 @@
+{% extends 'base.html' %}
+{% block title %}ควบคุม DSBasicSorting (Form2) - COMSC4{% endblock %}
+{% block page_header %}ระบบควบคุมและติดตามการเล่น DSBasicSorting แบบ Real-time (Bubble ฟองสบู่ / Selection แบบเลือก / Insertion แบบแทรก){% endblock %}
+{% block extra_css %}
+<style>
+  .ctrl-listbox {
+    height: 410px;
+    overflow-y: auto;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #fff;
+  }
+  .ctrl-listbox .list-group-item {
+    cursor: pointer;
+    font-size: 0.82rem;
+    padding: 0.45rem 0.65rem;
+    transition: background 0.12s;
+  }
+  .ctrl-listbox .list-group-item:hover {
+    background: #f1f5f9;
+  }
+  .ctrl-listbox .list-group-item.selected-row {
+    background: #dbeafe !important;
+    border-left: 4px solid #2563eb;
+  }
+  .hist-box3 {
+    height: 175px;
+    overflow-y: auto;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #f8fafc;
+    font-size: 0.8rem;
+  }
+  .t-unit-pill.active {
+    background-color: #dc2626 !important;
+    color: #fff !important;
+    border-color: #dc2626 !important;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="card mb-3 border-start border-4 border-primary">
+  <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <form method="get" id="sortingFilterForm" class="d-flex flex-wrap align-items-center gap-2">
+        <label class="small fw-bold mb-0">ฝึกเรียงลำดับข้อมูล:</label>
+        <select name="activity_id" class="form-select form-select-sm" style="min-width:250px;" onchange="this.form.submit()">
+          {% for act in activities %}
+          <option value="{{ act.id }}" {% if selected_activity and act.id == selected_activity.id %}selected{% endif %}>
+            {{ act.title }} (เซสชัน #{{ act.session_no }})
+          </option>
+          {% endfor %}
+        </select>
+
+        <input type="hidden" name="room" id="roomFilterInput" value="{{ selected_room }}">
+        <div class="dropdown" id="sortingRoomDropdownWrap">
+          <button class="btn btn-sm btn-outline-primary dropdown-toggle fw-bold" type="button"
+                  id="sortingRoomDropdownBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+            <i class="bi bi-funnel-fill me-1"></i>ห้องที่เลือก: <span id="sortingRoomBtnLabel">{{ selected_room_label }}</span>
+          </button>
+          <div class="dropdown-menu p-2 shadow" id="sortingRoomCheckboxMenu" style="min-width:270px; max-height:360px; overflow-y:auto;">
+            <div class="form-check pb-2 mb-2 border-bottom">
+              <input class="form-check-input sort-room-all-chk" type="checkbox" name="room_all" value="1" id="sortRoomAllChk"
+                     {% if is_all_rooms_selected %}checked{% endif %}>
+              <label class="form-check-label small fw-bold text-primary" for="sortRoomAllChk">
+                ทุกชั้น / ทุกห้อง (ทั้งหมด)
+              </label>
+            </div>
+            {% for g_lvl, g_rooms in classrooms_by_grade %}
+            <div class="mb-2 pb-1 border-bottom">
+              <div class="form-check">
+                <input class="form-check-input sort-grade-chk" type="checkbox" data-grade="{{ g_lvl }}" id="sortGradeChk_{{ g_lvl }}">
+                <label class="form-check-label small fw-bold text-dark" for="sortGradeChk_{{ g_lvl }}">
+                  ระดับชั้น ม.{{ g_lvl }} ทั้งหมด
+                </label>
+              </div>
+              <div class="ps-3 mt-1 d-flex flex-column gap-1">
+                {% for c in g_rooms %}
+                <div class="form-check mb-0">
+                  <input class="form-check-input sort-room-chk" type="checkbox" name="rooms" value="{{ c.code }}"
+                         data-grade="{{ g_lvl }}" id="sortRoomChk_{{ c.code }}"
+                         {% if c.code in selected_room_codes_set %}checked{% endif %}>
+                  <label class="form-check-label small" for="sortRoomChk_{{ c.code }}">{{ c.name }}</label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary btn-sm w-100 fw-bold mt-1">
+              <i class="bi bi-check2-circle me-1"></i>ตกลง / กรองห้อง
+            </button>
+          </div>
+        </div>
+      </form>
+      <span class="badge bg-info text-dark" id="activeScopeBadge">เฉพาะ: {{ selected_room_label }}</span>
+      {% if default_attendance_room_code and selected_room == default_attendance_room_code %}
+      <span class="badge bg-success-subtle text-success border border-success-subtle">ห้องเช็คชื่อล่าสุด</span>
+      {% endif %}
+      {% if selected_activity %}
+      <span class="badge bg-dark">เซสชันสด #<span id="curSessionNo">{{ selected_activity.session_no }}</span></span>
+      <span class="badge bg-secondary">PLAY seq #<span id="curBroadcastSeq">{{ selected_activity.broadcast_seq }}</span></span>
+      <span class="badge {% if selected_activity.is_exam_mode %}bg-danger{% else %}bg-success{% endif %}" id="curExamStateBadge">
+        {% if selected_activity.is_exam_mode %}กำลังเปิดสอบพร้อมกัน{% else %}โหมดฝึกฝนอิสระ{% endif %}
+      </span>
+      {% endif %}
+    </div>
+    <form method="post" class="d-inline">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="toggle_main_menu">
+      <button type="submit" class="btn btn-sm {% if site_setting.sorting_menu_open %}btn-success{% else %}btn-secondary{% endif %} fw-bold">
+        <i class="bi bi-power me-1"></i>เมนูหลักนักเรียน: {% if site_setting.sorting_menu_open %}เปิดอยู่{% else %}ซ่อนอยู่{% endif %}
+      </button>
+    </form>
+  </div>
+</div>
+
+{% if selected_activity %}
+<div id="broadcastToast" class="alert alert-success d-none fw-bold py-2 mb-3"></div>
+
+<!-- แผงควบคุม 3 คอลัมน์ เหมือน DSbasicsorting/Form2.cs -->
+<div class="row g-3 mb-4">
+  <!-- ซ้าย: listBox1 นักเรียนที่เชื่อมต่อ/กำลังเล่น/เสร็จแล้วทุกคน -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-people-fill text-warning me-1"></i>นักเรียน ({{ selected_room_label }})</span>
+        <span class="badge bg-warning text-dark" id="playersCountBadge">{{ live_data.online_count|default:0 }} คน</span>
+      </div>
+      <div class="card-body p-2">
+        <div class="ctrl-listbox list-group list-group-flush" id="playersListBox">
+          {% for p in live_data.players %}
+          <div class="list-group-item d-flex justify-content-between align-items-center" onclick="loadStudentHistory({{ p.student_pk }}, this)">
+            <div>
+              <div class="fw-bold">{{ p.room }} #{{ p.number }} [{{ p.student_id }}] {{ p.name }}</div>
+              <div class="small {% if p.state == 'playing' %}text-primary fw-semibold{% elif p.state == 'completed' %}text-success{% else %}text-muted{% endif %}">
+                {{ p.status_text }}
+              </div>
+            </div>
+            {% if p.state == 'playing' %}
+              <span class="spinner-grow spinner-grow-sm text-primary"></span>
+            {% elif p.state == 'completed' %}
+              <span class="badge bg-success">{{ p.cumulative_score|floatformat:2 }}</span>
+            {% else %}
+              <span class="badge bg-info text-dark">ออนไลน์</span>
+            {% endif %}
+          </div>
+          {% empty %}
+          <div class="text-center text-muted py-5 small">รอการเชื่อมต่อจากนักเรียน... (เมื่อนักเรียนเปิดหน้า Sorting จะปรากฏที่นี่อัตโนมัติ)</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- กลาง: แผงสั่ง PLAY + New Session + Export CSV + listBox3 ประวัติทีละรอบ -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header bg-primary text-white fw-bold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-broadcast me-1"></i>แผงควบคุมการเล่นพร้อมกัน (PLAY)</span>
+        <span class="badge {% if selected_activity.is_exam_mode %}bg-danger{% else %}bg-light text-dark{% endif %}">
+          {% if selected_activity.is_exam_mode %}โหมดสอบ{% else %}ฝึกฝน{% endif %}
+        </span>
+      </div>
+      <div class="card-body p-3">
+        <div class="mb-2">
+          <label class="small fw-bold d-block mb-1">รูปแบบการเรียง (วิธีเรียงลำดับภาษาไทย/อังกฤษ):</label>
+          <div class="btn-group w-100" role="group">
+            <input type="radio" class="btn-check" name="tSortType" id="tBubble" value="bubble" checked>
+            <label class="btn btn-outline-primary btn-sm fw-bold" for="tBubble">Bubble (ฟองสบู่)</label>
+            <input type="radio" class="btn-check" name="tSortType" id="tSelection" value="selection">
+            <label class="btn btn-outline-primary btn-sm fw-bold" for="tSelection">Selection (แบบเลือก)</label>
+            <input type="radio" class="btn-check" name="tSortType" id="tInsertion" value="insertion">
+            <label class="btn btn-outline-primary btn-sm fw-bold" for="tInsertion">Insertion (แบบแทรก)</label>
+          </div>
+        </div>
+
+        <div class="mb-2">
+          <label class="small fw-bold d-block mb-1">ลำดับ (Order):</label>
+          <div class="btn-group w-100" role="group">
+            <input type="radio" class="btn-check" name="tSortOrder" id="tAsc" value="asc" checked>
+            <label class="btn btn-outline-success btn-sm fw-bold" for="tAsc">น้อย &gt;&gt; มาก</label>
+            <input type="radio" class="btn-check" name="tSortOrder" id="tDesc" value="desc">
+            <label class="btn btn-outline-success btn-sm fw-bold" for="tDesc">มาก &gt;&gt; น้อย</label>
+          </div>
+        </div>
+
+        <div class="mb-2">
+          <label class="small fw-bold d-block mb-1">จำนวนตัวเลข (ไม่ต้องใช้ numericUpDown):</label>
+          <div class="btn-group btn-group-sm w-100" role="group" id="tUnitPills">
+            <button type="button" class="btn btn-outline-danger t-unit-pill" data-unit="4" onclick="selectTeacherUnit(4)">สุ่ม(5-9)</button>
+            <button type="button" class="btn btn-outline-danger t-unit-pill" data-unit="5" onclick="selectTeacherUnit(5)">5</button>
+            <button type="button" class="btn btn-outline-danger t-unit-pill" data-unit="6" onclick="selectTeacherUnit(6)">6</button>
+            <button type="button" class="btn btn-outline-danger t-unit-pill active" data-unit="7" onclick="selectTeacherUnit(7)">7</button>
+            <button type="button" class="btn btn-outline-danger t-unit-pill" data-unit="8" onclick="selectTeacherUnit(8)">8</button>
+            <button type="button" class="btn btn-outline-danger t-unit-pill" data-unit="9" onclick="selectTeacherUnit(9)">9</button>
+            <button type="button" class="btn btn-outline-danger t-unit-pill" data-unit="10" onclick="selectTeacherUnit(10)">10</button>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-danger w-100 fw-bold py-2 mb-2 shadow-sm" onclick="broadcastPlayCommand()">
+          <i class="bi bi-play-circle-fill me-1"></i>PLAY (สั่งนักเรียนในห้องที่เลือกเริ่มสอบพร้อมกันทันที)
+        </button>
+
+        <div class="d-flex gap-1 mb-2">
+          <form method="post" class="flex-fill">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="new_session">
+            <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+            <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary w-100 fw-bold">New Session</button>
+          </form>
+          <form method="post" class="flex-fill" onsubmit="return confirm('ล้างรายการเฉพาะ {{ selected_room_label|escapejs }} ในเซสชันนี้?')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="clear_list">
+            <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+            <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+            <button type="submit" class="btn btn-sm btn-outline-warning text-dark w-100 fw-bold">Clear List</button>
+          </form>
+          <a href="{% url 'core:teacher_sorting_export_csv' selected_activity.id %}?room={{ selected_room|urlencode }}" id="sortingExportCsvLink" class="btn btn-sm btn-outline-success flex-fill fw-bold">
+            <i class="bi bi-filetype-csv me-1"></i>Export CSV
+          </a>
+        </div>
+
+        <div class="d-flex gap-1 mb-2">
+          <form method="post" class="flex-fill">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="finish_exam">
+            <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+            <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+            <button type="submit" class="btn btn-sm btn-primary w-100 fw-bold">
+              <i class="bi bi-flag-fill me-1"></i>จบการสอบ &amp; บันทึกสถิติ
+            </button>
+          </form>
+          {% if selected_activity.is_exam_mode %}
+          <form method="post" class="flex-fill">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="pause_exam">
+            <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+            <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger w-100 fw-bold">
+              <i class="bi bi-pause-circle-fill me-1"></i>ปิดระบบสอบชั่วคราว
+            </button>
+          </form>
+          {% else %}
+          <form method="post" class="flex-fill">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reopen_exam">
+            <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+            <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+            <button type="submit" class="btn btn-sm btn-outline-success w-100 fw-bold">
+              <i class="bi bi-play-btn-fill me-1"></i>เปิดระบบสอบใหม่
+            </button>
+          </form>
+          {% endif %}
+        </div>
+
+        <form method="post" class="d-flex flex-wrap align-items-center gap-1 bg-warning-subtle p-2 rounded border border-warning mb-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reward_top_x">
+          <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+          <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+          <span class="small fw-bold text-nowrap">ให้คะแนน</span>
+          <input type="text" inputmode="numeric" pattern="[0-9]*" name="top_x_reward"
+                 value="{{ selected_activity.top_x_reward|default:5 }}"
+                 class="form-control form-control-sm fw-bold text-center"
+                 style="width:58px;" required aria-label="จำนวนคนสูงสุด">
+          <span class="small fw-bold text-nowrap">คน สูงสุด ({{ selected_room_label }})</span>
+          <button type="submit" class="btn btn-sm btn-warning fw-bold flex-grow-1">ให้คะแนน</button>
+        </form>
+
+        <!-- listBox3: ประวัติทีละรอบของนักเรียนที่คลิก -->
+        <div class="small fw-bold text-dark mb-1" id="historyBoxTitle">
+          <i class="bi bi-card-list text-primary me-1"></i>ประวัติการเล่นของนักเรียนที่เลือก (ListBox3):
+        </div>
+        <div class="hist-box3 list-group list-group-flush" id="studentDetailListBox">
+          <div class="text-center text-muted py-4 small">คลิกที่ชื่อนักเรียนใน ListBox1 หรือ ListBox2 เพื่อดูรายละเอียดทีละรอบ</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ขวา: listBox2 อันดับคะแนนสะสมรวมแบบ Real-time -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header bg-warning-subtle d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="bi bi-trophy-fill text-warning me-1"></i>อันดับคะแนนสะสม ({{ selected_room_label }})</span>
+        <span class="badge bg-success" id="completedCountBadge">{{ live_data.completed_count|default:0 }} คน</span>
+      </div>
+      <div class="card-body p-2">
+        <div class="ctrl-listbox list-group list-group-flush" id="leaderboardListBox">
+          {% for c in live_data.leaderboard %}
+          <div class="list-group-item {% if c.rank <= selected_activity.top_x_reward %}list-group-item-warning{% endif %} d-flex justify-content-between align-items-center" onclick="loadStudentHistory({{ c.student_pk }}, this)">
+            <div>
+              <div class="fw-bold">
+                <span class="badge bg-dark me-1">#{{ c.rank }}</span>
+                {{ c.room }} #{{ c.number }} {{ c.name }}
+              </div>
+              <div class="text-muted" style="font-size:0.74rem;">
+                [{{ c.student_id }}] รอบที่ {{ c.play_round_no }} · {{ c.algorithm_detail }}
+              </div>
+            </div>
+            <div class="text-end">
+              <span class="badge bg-success fs-6">{{ c.cumulative_score|floatformat:2 }}</span>
+              {% if c.is_top_rewarded %}<div><span class="badge bg-primary" style="font-size:0.65rem;">ได้โบนัสแล้ว</span></div>{% endif %}
+            </div>
+          </div>
+          {% empty %}
+          <div class="text-center text-muted py-5 small">ยังไม่มีนักเรียนส่งคะแนนในเซสชันนี้</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- สถิติรอบการสอบที่บันทึกไว้ & สถานะหัวข้อกิจกรรม -->
+<div class="card mb-3">
+  <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-bar-chart-line-fill me-2"></i>สถิติรอบการสอบที่บันทึกไว้ ({{ selected_activity.title|default:"ฝึกเรียงลำดับข้อมูล" }})</span>
+    <span class="badge bg-light text-dark">นักเรียนฝึกฝนอิสระได้ตลอด · การสอบจะทำงานเมื่อครูกด PLAY</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>รอบที่</th>
+            <th>ชื่อรอบสอบ / รูปแบบ</th>
+            <th>ห้องที่เลือกสอบ</th>
+            <th class="text-center">ผู้สอบ</th>
+            <th class="text-center">สูงสุด / เฉลี่ย</th>
+            <th>สถานะ</th>
+            <th>เวลาเริ่มสอบ</th>
+            <th class="text-end">ดูสถิติ / จัดการ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rec in exam_records %}
+          <tr>
+            <td class="fw-bold">#{{ rec.session_no }}</td>
+            <td>
+              <div class="fw-bold small">{{ rec.title }}</div>
+              <div class="text-muted" style="font-size:0.74rem;">{{ rec.sort_type }} · {{ rec.sort_order }} · {{ rec.unit_count }} ตัว</div>
+            </td>
+            <td><span class="badge bg-info text-dark">{{ rec.room_label|default:"ทุกชั้น / ทุกห้อง" }}</span></td>
+            <td class="text-center fw-bold">{{ rec.participant_count }}</td>
+            <td class="text-center">
+              <span class="badge bg-success">{{ rec.max_score|floatformat:2 }}</span>
+              <span class="text-muted small">/ {{ rec.avg_score|floatformat:2 }}</span>
+            </td>
+            <td>
+              {% if rec.status == 'active' %}
+                <span class="badge bg-danger">กำลังสอบ</span>
+              {% elif rec.status == 'paused' %}
+                <span class="badge bg-warning text-dark">ปิดรับชั่วคราว</span>
+              {% else %}
+                <span class="badge bg-secondary">จบการสอบแล้ว</span>
+              {% endif %}
+            </td>
+            <td class="small text-muted">{{ rec.started_at|date:"d/m/Y H:i" }}</td>
+            <td class="text-end text-nowrap">
+              <button type="button" class="btn btn-sm btn-outline-info fw-bold" data-bs-toggle="modal" data-bs-target="#examStatsModal_{{ rec.id }}">
+                <i class="bi bi-eye-fill me-1"></i>ดูสถิติ
+              </button>
+              <form method="post" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reopen_exam">
+                <input type="hidden" name="activity_id" value="{{ rec.activity_id }}">
+                <input type="hidden" name="record_id" value="{{ rec.id }}">
+                <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+                <button type="submit" class="btn btn-sm btn-outline-success fw-bold">
+                  <i class="bi bi-arrow-repeat me-1"></i>เปิดสอบใหม่
+                </button>
+              </form>
+              <form method="post" class="d-inline" onsubmit="return confirm('ยืนยันลบสถิติรอบ #{{ rec.session_no }} ?')">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_exam_record">
+                <input type="hidden" name="activity_id" value="{{ rec.activity_id }}">
+                <input type="hidden" name="record_id" value="{{ rec.id }}">
+                <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                  <i class="bi bi-trash-fill me-1"></i>ลบ
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4 small">
+              ยังไม่มีสถิติรอบการสอบที่บันทึกไว้ — เลือกห้องเรียนแล้วกด <b>PLAY</b> เพื่อเริ่มสอบ และกด <b>จบการสอบ &amp; บันทึกสถิติ</b> เมื่อสิ้นสุด
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% for rec in exam_records %}
+<div class="modal fade" id="examStatsModal_{{ rec.id }}" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white py-2">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-trophy-fill text-warning me-2"></i>สถิติ {{ rec.title }} (รอบ #{{ rec.session_no }} · {{ rec.room_label|default:"ทุกชั้น / ทุกห้อง" }})
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div class="d-flex justify-content-around py-2 bg-light border-bottom small fw-bold">
+          <span>ผู้เข้าสอบ: {{ rec.participant_count }} คน</span>
+          <span class="text-success">คะแนนสูงสุด: {{ rec.max_score|floatformat:2 }}</span>
+          <span class="text-primary">คะแนนเฉลี่ย: {{ rec.avg_score|floatformat:2 }}</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>อันดับ</th>
+                <th>รหัส</th>
+                <th>ชื่อ-สกุล</th>
+                <th>ห้อง / เลขที่</th>
+                <th class="text-end">คะแนนสะสม</th>
+                <th class="text-end">เวลา (วิ)</th>
+                <th class="text-end">ผิดพลาด</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rec.get_stats_list %}
+              <tr>
+                <td class="fw-bold">#{{ row.rank }}</td>
+                <td><code>{{ row.student_id }}</code></td>
+                <td class="fw-semibold">{{ row.name }}</td>
+                <td class="small">{{ row.room }} เลขที่ {{ row.class_number }}</td>
+                <td class="text-end fw-bold text-success">{{ row.score|floatformat:2 }}</td>
+                <td class="text-end small">{{ row.time_used }}</td>
+                <td class="text-end small">{{ row.attempts }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="7" class="text-center text-muted py-3 small">ยังไม่มีผู้ส่งคะแนนในรอบสอบนี้</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ปิด</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+<div class="card">
+  <a class="card-header d-flex justify-content-between align-items-center text-decoration-none text-dark"
+     data-bs-toggle="collapse" href="#sortingAllActivitiesCollapse" role="button" aria-expanded="false" aria-controls="sortingAllActivitiesCollapse">
+    <span><i class="bi bi-list-ol text-primary me-2"></i>กิจกรรมทั้งหมด <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1">{{ activities|length }} รายการ</span></span>
+    <span class="small text-muted"><i class="bi bi-chevron-down me-1"></i>คลิกเพื่อเปิด/พับรายการ</span>
+  </a>
+  <div class="collapse" id="sortingAllActivitiesCollapse">
+    <div class="card-body p-0">
+      <div class="px-3 py-2 bg-light border-bottom small text-danger">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>หมายเหตุ: การลบกิจกรรมจะลบข้อมูลการส่งและคะแนนบวก Top X ที่เชื่อมโยงกับกิจกรรมนั้น (มีผลต่อคะแนนรวมของนักเรียน)
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>ชื่อกิจกรรม</th>
+              <th>รูปแบบ</th>
+              <th>สถานะระบบสอบ</th>
+              <th>เปิดใช้งาน</th>
+              <th class="text-end">จัดการ / สรุปอันดับ / ลบ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for act in activities %}
+            <tr>
+              <td>
+                <div class="fw-bold small">{{ act.title }}</div>
+                <div class="text-muted" style="font-size:0.74rem;">
+                  เซสชัน #{{ act.session_no }} · ส่งแล้ว {{ act.play_count }} ครั้ง
+                </div>
+              </td>
+              <td><span class="badge bg-info text-dark">{{ act.get_mode_display }}</span></td>
+              <td>
+                {% if act.is_exam_mode %}
+                  <span class="badge bg-danger">กำลังเปิดสอบ (ให้คะแนน {{ act.top_x_reward }} คนสูงสุด)</span>
+                {% else %}
+                  <span class="badge bg-success-subtle text-success border border-success-subtle">โหมดฝึกฝนอิสระ</span>
+                {% endif %}
+              </td>
+              <td>
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="toggle_activity">
+                  <input type="hidden" name="activity_id" value="{{ act.id }}">
+                  <input type="hidden" name="selected_activity_id" value="{{ selected_activity.id|default:'' }}">
+                  <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+                  <button type="submit" class="btn btn-sm {% if act.is_active %}btn-success{% else %}btn-secondary{% endif %}">
+                    {% if act.is_active %}เปิด{% else %}ปิด{% endif %}
+                  </button>
+                </form>
+              </td>
+              <td class="text-end">
+                <a href="/teacher/sorting/?activity_id={{ act.id }}{% if selected_room %}&room={{ selected_room|urlencode }}{% endif %}" class="btn btn-sm btn-outline-primary">ควบคุมสด</a>
+                <a href="{% url 'core:teacher_sorting_summary' act.id %}{% if selected_room %}?room={{ selected_room|urlencode }}{% endif %}" class="btn btn-sm btn-warning fw-bold">สรุปอันดับ</a>
+                <form method="post" class="d-inline" onsubmit="return confirm('ยืนยันลบกิจกรรม &quot;{{ act.title|escapejs }}&quot; ?\n\nการลบนี้จะมีผลต่อคะแนนนักเรียน (ระบบจะลบคะแนนบวกของกิจกรรมนี้ออกและคำนวณคะแนนรวมใหม่ทันที)');">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="delete_activity">
+                  <input type="hidden" name="activity_id" value="{{ act.id }}">
+                  <input type="hidden" name="room" class="sync-sorting-room" value="{{ selected_room }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash-fill me-1"></i>ลบ</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if selected_activity %}
+<script>
+const SEL_ACT_ID = {{ selected_activity.id }};
+const TOP_X = {{ selected_activity.top_x_reward }};
+const CSRF_TOKEN = '{{ csrf_token }}';
+let teacherUnitCount = {{ selected_activity.broadcast_unit|default:7 }};
+let selectedStudentPk = null;
+
+function selectTeacherUnit(u) {
+  teacherUnitCount = parseInt(u);
+  document.querySelectorAll('#tUnitPills .t-unit-pill').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.unit) === teacherUnitCount);
+  });
+}
+selectTeacherUnit(teacherUnitCount);
+
+function getSelectedRoomFilterValue() {
+  const allChk = document.getElementById('sortRoomAllChk');
+  if (allChk && allChk.checked) return '';
+  const checked = Array.from(document.querySelectorAll('.sort-room-chk:checked')).map(el => el.value);
+  return checked.join(',');
+}
+
+function updateSortingRoomCheckboxesUI() {
+  const allChk = document.getElementById('sortRoomAllChk');
+  const roomChks = Array.from(document.querySelectorAll('.sort-room-chk'));
+  const gradeChks = Array.from(document.querySelectorAll('.sort-grade-chk'));
+  gradeChks.forEach(gc => {
+    const g = gc.dataset.grade;
+    const members = roomChks.filter(rc => rc.dataset.grade === g);
+    gc.checked = members.length > 0 && members.every(m => m.checked);
+  });
+  if (allChk) {
+    allChk.checked = roomChks.length > 0 && roomChks.every(rc => rc.checked);
+  }
+  const val = getSelectedRoomFilterValue();
+  const hid = document.getElementById('roomFilterInput');
+  if (hid) hid.value = val;
+  document.querySelectorAll('.sync-sorting-room').forEach(el => { el.value = val; });
+  const exportLink = document.getElementById('sortingExportCsvLink');
+  if (exportLink) {
+    const baseUrl = exportLink.href.split('?')[0];
+    exportLink.href = `${baseUrl}?room=${encodeURIComponent(val)}`;
+  }
+  const btnLbl = document.getElementById('sortingRoomBtnLabel');
+  if (btnLbl) {
+    if (!val) btnLbl.textContent = 'ทุกชั้น / ทุกห้อง (ทั้งหมด)';
+    else {
+      const checkedNames = roomChks.filter(rc => rc.checked).map(rc => {
+        const lbl = document.querySelector(`label[for="${rc.id}"]`);
+        return lbl ? lbl.textContent.trim() : rc.value;
+      });
+      btnLbl.textContent = checkedNames.length > 2 ? `เลือก ${checkedNames.length} ห้อง` : (checkedNames.join(', ') || 'ทุกชั้น / ทุกห้อง');
+    }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const allChk = document.getElementById('sortRoomAllChk');
+  if (allChk) {
+    allChk.addEventListener('change', () => {
+      const checked = allChk.checked;
+      document.querySelectorAll('.sort-grade-chk, .sort-room-chk').forEach(el => { el.checked = checked; });
+      updateSortingRoomCheckboxesUI();
+    });
+  }
+  document.querySelectorAll('.sort-grade-chk').forEach(gc => {
+    gc.addEventListener('change', () => {
+      const g = gc.dataset.grade;
+      document.querySelectorAll(`.sort-room-chk[data-grade="${g}"]`).forEach(rc => { rc.checked = gc.checked; });
+      updateSortingRoomCheckboxesUI();
+    });
+  });
+  document.querySelectorAll('.sort-room-chk').forEach(rc => {
+    rc.addEventListener('change', () => updateSortingRoomCheckboxesUI());
+  });
+  updateSortingRoomCheckboxesUI();
+});
+
+function broadcastPlayCommand() {
+  const sortType = (document.querySelector('input[name="tSortType"]:checked') || {}).value || 'bubble';
+  const sortOrder = (document.querySelector('input[name="tSortOrder"]:checked') || {}).value || 'asc';
+  const roomFilter = document.getElementById('roomFilterInput')?.value || '';
+
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('sort_type', sortType);
+  fd.append('sort_order', sortOrder);
+  fd.append('unit_count', teacherUnitCount);
+  fd.append('room_code', roomFilter);
+
+  fetch(`/api/sorting/${SEL_ACT_ID}/broadcast-play/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return alert(data.error || 'ส่งคำสั่งไม่สำเร็จ');
+      const toast = document.getElementById('broadcastToast');
+      toast.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${data.summary_text} (เซสชัน #${data.session_no})`;
+      toast.classList.remove('d-none');
+      document.getElementById('curSessionNo').innerText = data.session_no;
+      document.getElementById('curBroadcastSeq').innerText = data.broadcast_seq;
+      const badge = document.getElementById('curExamStateBadge');
+      if (badge) {
+        badge.className = 'badge bg-danger';
+        badge.textContent = 'กำลังเปิดสอบพร้อมกัน';
+      }
+      refreshLiveConsole();
+    });
+}
+
+function loadStudentHistory(studentPk, rowEl) {
+  selectedStudentPk = studentPk;
+  document.querySelectorAll('#playersListBox .list-group-item, #leaderboardListBox .list-group-item').forEach(el => {
+    el.classList.remove('selected-row');
+  });
+  if (rowEl) rowEl.classList.add('selected-row');
+
+  fetch(`/api/sorting/${SEL_ACT_ID}/student-history/${studentPk}/`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      document.getElementById('historyBoxTitle').innerHTML =
+        `<i class="bi bi-person-lines-fill text-primary me-1"></i>${data.student.room} #${data.student.number} ${data.student.name} (สะสม <b>${data.cumulative_score.toFixed(2)}</b>)`;
+      const box = document.getElementById('studentDetailListBox');
+      if (!data.rounds || data.rounds.length === 0) {
+        box.innerHTML = '<div class="text-center text-muted py-4 small">นักเรียนคนนี้ยังไม่ได้ส่งคะแนนในเซสชันนี้</div>';
+        return;
+      }
+      box.innerHTML = data.rounds.map(r => `
+        <div class="list-group-item py-1 px-2">
+          <div class="fw-bold text-dark">${r.detail}</div>
+          <div class="text-muted" style="font-size:0.7rem;">สะสม: ${r.cumulative_score.toFixed(2)} · เวลา ${r.created_at}</div>
+        </div>
+      `).join('');
+    });
+}
+
+function refreshLiveConsole() {
+  const room = document.getElementById('roomFilterInput')?.value || '';
+  fetch(`/api/sorting/${SEL_ACT_ID}/live-board/?room=${encodeURIComponent(room)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      document.getElementById('curSessionNo').innerText = data.session_no;
+      document.getElementById('curBroadcastSeq').innerText = data.broadcast_seq;
+      document.getElementById('playersCountBadge').innerText = `${data.online_count} คน`;
+      document.getElementById('completedCountBadge').innerText = `${data.completed_count} คน`;
+
+      const pBox = document.getElementById('playersListBox');
+      if (data.players && data.players.length > 0) {
+        pBox.innerHTML = data.players.map(p => `
+          <div class="list-group-item d-flex justify-content-between align-items-center ${selectedStudentPk === p.student_pk ? 'selected-row' : ''}" onclick="loadStudentHistory(${p.student_pk}, this)">
+            <div>
+              <div class="fw-bold">${p.room} #${p.number} [${p.student_id}] ${p.name}</div>
+              <div class="small ${p.state === 'playing' ? 'text-primary fw-semibold' : (p.state === 'completed' ? 'text-success' : 'text-muted')}">
+                ${p.status_text}
+              </div>
+            </div>
+            ${p.state === 'playing' ? '<span class="spinner-grow spinner-grow-sm text-primary"></span>' :
+              (p.state === 'completed' ? `<span class="badge bg-success">${p.cumulative_score.toFixed(2)}</span>` : '<span class="badge bg-info text-dark">ออนไลน์</span>')}
+          </div>
+        `).join('');
+      } else {
+        pBox.innerHTML = '<div class="text-center text-muted py-5 small">รอการเชื่อมต่อจากนักเรียน...</div>';
+      }
+
+      const lBox = document.getElementById('leaderboardListBox');
+      if (data.leaderboard && data.leaderboard.length > 0) {
+        lBox.innerHTML = data.leaderboard.map(c => `
+          <div class="list-group-item ${c.rank <= data.top_x_reward ? 'list-group-item-warning' : ''} ${selectedStudentPk === c.student_pk ? 'selected-row' : ''} d-flex justify-content-between align-items-center" onclick="loadStudentHistory(${c.student_pk}, this)">
+            <div>
+              <div class="fw-bold"><span class="badge bg-dark me-1">#${c.rank}</span> ${c.room} #${c.number} ${c.name}</div>
+              <div class="text-muted" style="font-size:0.74rem;">[${c.student_id}] รอบที่ ${c.play_round_no} · ${c.algorithm_detail}</div>
+            </div>
+            <div class="text-end">
+              <span class="badge bg-success fs-6">${c.cumulative_score.toFixed(2)}</span>
+              ${c.is_top_rewarded ? '<div><span class="badge bg-primary" style="font-size:0.65rem;">ได้โบนัสแล้ว</span></div>' : ''}
+            </div>
+          </div>
+        `).join('');
+      } else {
+        lBox.innerHTML = '<div class="text-center text-muted py-5 small">ยังไม่มีนักเรียนส่งคะแนนในเซสชันนี้</div>';
+      }
+    });
+}
+
+setInterval(refreshLiveConsole, 2000);
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+{% block title %}จัดการนักเรียน — นำเข้ารายชื่อ - COMSC4{% endblock %}
+{% block page_header %}จัดการนักเรียน · นำเข้ารายชื่อนักเรียน (CSV / Excel){% endblock %}
+{% block content %}
+<ul class="nav nav-pills mb-3 gap-2">
+  <li class="nav-item">
+    <a class="nav-link bg-white border fw-bold" href="{% url 'core:teacher_students' %}">
+      <i class="bi bi-people-fill text-primary me-1"></i>รายชื่อนักเรียน
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link active fw-bold" href="{% url 'core:teacher_import_students' %}">
+      <i class="bi bi-file-earmark-arrow-up-fill me-1"></i>นำเข้ารายชื่อนักเรียน (CSV / Excel)
+    </a>
+  </li>
+</ul>
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="mb-0 fw-bold">
+      <i class="bi bi-file-earmark-excel me-2 text-success"></i>{{ title }}
+      <span class="badge bg-primary ms-1">ปีการศึกษา {{ current_academic_year|default:site_setting.current_academic_year }}</span>
+    </h5>
+    <div class="small text-muted">รองรับไฟล์ <code>students_data.csv</code> (.csv) และ Excel (.xlsx) คอลัมน์เรียงสลับลำดับได้ ระบบจับคู่ตามชื่อหัวคอลัมน์อัตโนมัติ</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-success btn-sm fw-bold" href="{% url 'core:teacher_students_template' %}">
+      <i class="bi bi-file-earmark-arrow-down me-1"></i>ดาวน์โหลดไฟล์ตัวอย่าง (Template ภาษาไทย)
+    </a>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'core:teacher_students_template' %}?lang=en">
+      <i class="bi bi-file-earmark-code me-1"></i>Template (หัวตารางอังกฤษ)
+    </a>
+    <a class="btn btn-outline-primary btn-sm" href="{% url 'core:teacher_students' %}">
+      <i class="bi bi-people me-1"></i>กลับหน้ารายชื่อนักเรียน
+    </a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- กล่องอัปโหลด (ซ้าย) -->
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header fw-bold">
+        <i class="bi bi-cloud-upload me-2 text-primary"></i>ขั้นตอนที่ 1: เลือกไฟล์ CSV / Excel
+      </div>
+      <div class="card-body">
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">ไฟล์รายชื่อนักเรียน (.csv / .xlsx) <span class="text-danger">*</span></label>
+            <input type="file" name="file" class="form-control" accept=".csv,.xlsx" required>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="submit" name="action" value="preview" class="btn btn-outline-primary flex-grow-1 fw-bold">
+              <i class="bi bi-eye me-1"></i>ตรวจสอบข้อมูลก่อน (Preview)
+            </button>
+            <button type="submit" name="action" value="import" class="btn btn-primary flex-grow-1 fw-bold">
+              <i class="bi bi-cloud-arrow-up me-1"></i>อัปโหลดและนำเข้าทันที
+            </button>
+          </div>
+        </form>
+
+        <hr class="my-3">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="load_default_csv">
+          <button type="submit" class="btn btn-warning btn-sm w-100 fw-bold">
+            <i class="bi bi-arrow-repeat me-1"></i>โหลดข้อมูลเริ่มต้นจากไฟล์ students_data.csv ในโปรเจกต์
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header fw-bold">
+        <i class="bi bi-table me-2 text-info"></i>หัวตารางที่รองรับ
+      </div>
+      <div class="card-body small py-2">
+        <div class="mb-2">
+          <strong class="text-success d-block mb-1">ภาษาไทย (รูปแบบ students_data.csv):</strong>
+          <div class="d-flex flex-wrap gap-1">
+            {% for c in columns %}<span class="badge bg-success bg-opacity-10 text-success border border-success-subtle">{{ c }}</span>{% endfor %}
+          </div>
+        </div>
+        <div>
+          <strong class="text-primary d-block mb-1">ภาษาอังกฤษ:</strong>
+          <div class="d-flex flex-wrap gap-1">
+            {% for c in columns_en %}<span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle font-monospace">{{ c }}</span>{% endfor %}
+          </div>
+        </div>
+        <ul class="mt-2 mb-0 ps-3 text-muted">
+          <li>นำเข้าแยกตามปีการศึกษาปัจจุบัน (<b>ปี {{ current_academic_year|default:site_setting.current_academic_year }}</b>)</li>
+          <li>หากเลขประจำตัวซ้ำกับนักเรียน<b>ในปีการศึกษาเดียวกัน</b> ระบบจะอัปเดตข้อมูลให้เป็นปัจจุบัน</li>
+          <li>หากเลขประจำตัวซ้ำกับ<b>ปีการศึกษาที่ผ่านมา</b> ระบบจะสร้างบัญชีใหม่สำหรับปีนี้โดยไม่กระทบข้อมูลปีเก่า</li>
+          <li>หากเป็นรหัสใหม่ ระบบจะสร้างบัญชีพร้อมผูกอีเมล <code>s[เลขประจำตัว]@debsirin.ac.th</code> อัตโนมัติ</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- กล่องแสดงผล Preview / Result (ขวา) -->
+  <div class="col-lg-8">
+    {% if preview %}
+    <div class="card mb-3">
+      <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+        <span class="fw-bold"><i class="bi bi-list-check me-2 text-primary"></i>ขั้นตอนที่ 2: ตรวจสอบผลการอ่านข้อมูล ({{ preview.total }} แถว)</span>
+        <div>
+          <span class="badge bg-success me-1">ถูกต้อง: {{ preview.valid_count }}</span>
+          <span class="badge bg-danger">ผิดพลาด: {{ preview.invalid_count }}</span>
+        </div>
+      </div>
+      {% if preview.matched_columns or preview.ignored_columns %}
+      <div class="px-3 py-2 bg-light border-bottom small">
+        {% if preview.matched_columns %}
+        <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+          <span class="fw-semibold text-primary me-1"><i class="bi bi-diagram-3 me-1"></i>จับคู่คอลัมน์:</span>
+          {% for mc in preview.matched_columns %}
+            <span class="badge bg-white text-dark border">{{ mc.col_letter }}: {{ mc.header }} &rarr; <strong class="text-primary">{{ mc.label }}</strong></span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if preview.ignored_columns %}
+        <div class="d-flex flex-wrap align-items-center gap-1 text-muted">
+          <span class="me-1">คอลัมน์ที่ข้าม:</span>
+          {% for ic in preview.ignored_columns %}
+            <span class="badge bg-secondary bg-opacity-10 text-secondary border">{{ ic }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:460px; overflow-y:auto;">
+          <table class="table table-sm table-hover mb-0 text-nowrap" style="font-size:0.82rem;">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th>แถว</th>
+                <th>ชั้น/ห้อง</th>
+                <th>เลขที่</th>
+                <th>เลขประจำตัว</th>
+                <th>ชื่อ-นามสกุล</th>
+                <th>อีเมลโรงเรียน (OAuth)</th>
+                <th>กลุ่ม</th>
+                <th>สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in preview.rows %}
+              <tr class="{% if not r.valid %}table-danger{% elif r.is_update %}table-warning{% endif %}">
+                <td>{{ r.rownum }}</td>
+                <td>{{ r.room_display }}</td>
+                <td>{{ r.class_number }}</td>
+                <td class="font-monospace fw-bold">{{ r.student_id }}</td>
+                <td>{{ r.full_name_display }}</td>
+                <td><code>{{ r.email }}</code></td>
+                <td>{{ r.group_name }}</td>
+                <td>
+                  {% if r.valid %}
+                    {% if r.is_update %}<span class="badge bg-warning text-dark">ทับข้อมูลเดิม</span>
+                    {% elif r.from_prev_year %}<span class="badge bg-info text-dark">สร้างใหม่ปีนี้ (รหัสซ้ำปีเก่า)</span>
+                    {% else %}<span class="badge bg-success">สร้างใหม่</span>{% endif %}
+                    {% if r.warnings %}<div class="text-warning small">{{ r.warnings|join:", " }}</div>{% endif %}
+                  {% else %}
+                    <span class="text-danger small">{{ r.errors|join:", " }}</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card-footer d-flex justify-content-between align-items-center bg-light">
+        <span class="small text-muted">ตรวจสอบข้อมูลให้ถูกต้องก่อนกดยืนยันการนำเข้า</span>
+        {% if preview.valid_count > 0 %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="confirm_import">
+          <button type="submit" class="btn btn-success btn-sm fw-bold">
+            <i class="bi bi-check2-circle me-1"></i>ยืนยันนำเข้าข้อมูลที่ถูกต้อง ({{ preview.valid_count }} รายการ)
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if result %}
+    <div class="card">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-check-circle-fill text-success me-2"></i>ผลการนำเข้าข้อมูล (ทั้งหมด {{ result.total }} แถว)</span>
+      </div>
+      <div class="card-body">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="badge bg-success fs-6">สร้างใหม่ {{ result.created }} คน</span>
+          <span class="badge bg-primary fs-6">ทับข้อมูลเดิม {{ result.updated }} คน</span>
+          <span class="badge {% if result.errors %}bg-danger{% else %}bg-secondary{% endif %} fs-6">
+            ข้อผิดพลาด {{ result.errors|length }} รายการ
+          </span>
+        </div>
+        {% if result.errors %}
+        <div class="table-responsive" style="max-height:360px; overflow-y:auto;">
+          <table class="table table-sm table-bordered mb-0">
+            <thead class="table-light"><tr><th style="width:80px;">แถวที่</th><th>รายละเอียดปัญหา</th></tr></thead>
+            <tbody>
+              {% for r, m in result.errors %}
+              <tr><td class="text-center fw-bold">{{ r }}</td><td class="text-danger">{{ m }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="alert alert-success mb-0">นำเข้าข้อมูลนักเรียนครบทุกแถวโดยไม่มีข้อผิดพลาด</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

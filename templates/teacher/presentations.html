@@ -1,0 +1,825 @@
+{% extends 'base.html' %}
+{% block title %}นำเสนอใบงาน - COMSC4{% endblock %}
+{% block page_header %}นำเสนอใบงาน (สุ่มผู้นำเสนอ · ขยายผลงานเต็มจอ · ให้คะแนนทั้งหมดลดหลั่น){% endblock %}
+{% block extra_css %}
+<style>
+  .pres-topbar {
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    padding: 0.65rem 0.9rem;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  }
+  .pres-stage-card {
+    background: #0f172a;
+    color: #fff;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.22);
+    display: flex;
+    flex-direction: column;
+    min-height: 78vh;
+  }
+  .pres-stage-header {
+    background: linear-gradient(90deg, #1e293b 0%, #0f172a 100%);
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  .pres-zoom-viewport {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 62vh;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #111827;
+    background-image:
+      radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+      radial-gradient(rgba(255, 255, 255, 0.04) 1px, #111827 1px);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+    cursor: grab;
+    user-select: none;
+  }
+  .pres-zoom-viewport.is-dragging {
+    cursor: grabbing;
+  }
+  .pres-zoom-canvas {
+    transform-origin: center center;
+    transition: transform 0.08s ease-out;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    max-width: 96%;
+    max-height: 96%;
+    padding: 1rem;
+  }
+  .pres-stage-img {
+    max-width: 100%;
+    max-height: 64vh;
+    width: auto;
+    height: auto;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+  }
+  .pres-qa-card {
+    background: #ffffff;
+    color: #0f172a;
+    border-radius: 18px;
+    padding: 2.5rem 3.25rem;
+    min-width: 340px;
+    max-width: 860px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+    border: 4px solid #86efac;
+    text-align: center;
+  }
+  .pres-qa-answer {
+    font-size: clamp(1.8rem, 3.2vw, 3.1rem);
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+  .pres-stage-footer {
+    background: #1e293b;
+    padding: 0.55rem 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  .pres-queue-list {
+    max-height: 58vh;
+    overflow-y: auto;
+  }
+  .pres-queue-item {
+    cursor: pointer;
+    background: #ffffff;
+    color: #0f172a;
+    border-left: 4px solid transparent;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .pres-queue-item:hover {
+    background: #f1f5f9;
+  }
+  .pres-queue-item.is-viewed {
+    background-color: #dcfce7 !important;
+    color: #14532d !important;
+    border-left: 4px solid #22c55e !important;
+  }
+  .pres-queue-item.is-current {
+    background-color: #bbf7d0 !important;
+    color: #052e16 !important;
+    border-left: 4px solid #15803d !important;
+    font-weight: 700;
+  }
+  .pres-queue-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+  .pres-stage-card:fullscreen .pres-zoom-viewport {
+    min-height: 80vh;
+  }
+  .pres-stage-card:fullscreen .pres-stage-img {
+    max-height: 80vh;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- แถบควบคุมด้านบน: เลือกห้อง, เลือกกิจกรรม, รูปแบบสุ่มต่อ/เริ่มใหม่, ระบุจำนวนสุ่ม, ให้คะแนนทั้งหมด -->
+<div class="pres-topbar mb-2">
+  <div class="row g-2 align-items-end">
+    <div class="col-lg-5">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-sm-4">
+          <label class="small fw-bold mb-0">ห้องเรียน:</label>
+          <select name="room" class="form-select form-select-sm fw-bold border-primary" onchange="this.form.submit()">
+            <option value="all" {% if selected_room == 'all' %}selected{% endif %}>ทุกห้องเรียน</option>
+            {% for c in classrooms %}
+            <option value="{{ c.code }}" {% if selected_room == c.code %}selected{% endif %}>{{ c.name }} ({{ c.code }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-sm-5">
+          <label class="small fw-bold mb-0">กิจกรรม / ใบงาน:</label>
+          <select name="activity_id" class="form-select form-select-sm fw-bold border-primary" onchange="this.form.submit()">
+            {% for act in activities %}
+            <option value="{{ act.id }}" {% if selected_activity and act.id == selected_activity.id %}selected{% endif %}>
+              {{ act.title }} — {{ act.room_submitted_count }}/{{ act.room_total_students }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-sm-3">
+          <label class="small fw-bold mb-0">วันที่:</label>
+          <input type="date" name="draw_date" class="form-control form-control-sm fw-bold" value="{{ draw_date_str }}" onchange="this.form.submit()">
+        </div>
+      </form>
+    </div>
+
+    {% if selected_activity %}
+    <div class="col-lg-4">
+      <form method="post" id="randomPresentForm" onsubmit="return validateDrawCount()">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="random_present">
+        <input type="hidden" name="room" value="{{ selected_room }}">
+        <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+        <input type="hidden" name="draw_date" value="{{ draw_date_str }}">
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <span class="badge bg-primary">มีผู้ส่งผลงานแล้ว {{ submitted_count }} / {{ total_room_students }} คน</span>
+          <div class="form-check form-check-inline mb-0 small">
+            <input class="form-check-input border-success" type="checkbox" name="only_registered" id="onlyRegisteredChk" value="1"
+                   {% if only_registered %}checked{% endif %} onchange="syncDrawModeBounds()">
+            <label class="form-check-label fw-bold text-success" for="onlyRegisteredChk" title="สุ่มเฉพาะนักเรียนที่ส่งผลงานและ Login หรือเช็คชื่อแล้วเท่านั้น">
+              เฉพาะที่ลงทะเบียน ({{ registered_submitted_count }})
+            </label>
+          </div>
+          <div class="form-check form-check-inline mb-0 small">
+            <input class="form-check-input" type="radio" name="draw_mode" id="modeContinue" value="continue" checked onchange="syncDrawModeBounds()">
+            <label class="form-check-label fw-bold text-primary" for="modeContinue">
+              สุ่มต่อจากเดิม (<span id="continueRemainTxt">{{ eligible_continue_count }}</span>)
+            </label>
+          </div>
+          <div class="form-check form-check-inline mb-0 small">
+            <input class="form-check-input" type="radio" name="draw_mode" id="modeReset" value="reset" onchange="syncDrawModeBounds()">
+            <label class="form-check-label fw-bold text-danger" for="modeReset">
+              เริ่มสุ่มใหม่ (<span id="resetRemainTxt">{{ eligible_reset_count }}</span>)
+            </label>
+          </div>
+        </div>
+
+        <div class="input-group input-group-sm">
+          <span class="input-group-text fw-bold bg-warning-subtle text-dark">จำนวนสุ่ม</span>
+          <input type="number" name="draw_count" id="drawCountInput" class="form-control text-center fw-bold"
+                 style="max-width:85px;" min="1" max="{{ eligible_continue_count|default:1 }}"
+                 value="1" required>
+          <span class="input-group-text small text-muted" id="drawMaxHint">/ สูงสุด {{ eligible_continue_count }} คน</span>
+          <button type="submit" class="btn btn-warning fw-bold">
+            <i class="bi bi-shuffle me-1"></i>สุ่มรายชื่อ
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="col-lg-3 d-flex flex-wrap justify-content-lg-end align-items-center gap-2">
+      <form method="post" class="m-0">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="reset_presentation_round">
+        <input type="hidden" name="room" value="{{ selected_room }}">
+        <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+        <input type="hidden" name="draw_date" value="{{ draw_date_str }}">
+        <button type="submit" class="btn btn-sm btn-outline-danger fw-bold" title="เริ่มรอบการสุ่มใหม่ (ล้างคิวรอบปัจจุบัน)">
+          <i class="bi bi-arrow-clockwise me-1"></i>เริ่มใหม่
+        </button>
+      </form>
+
+      <button type="button" class="btn btn-sm btn-info fw-bold text-dark" data-bs-toggle="modal" data-bs-target="#answerKeyControlModal"
+              title="เปิด/ปิดเฉลยใบงานแต่ละข้อให้นักเรียนดู (เมื่อเปิดเฉลยแล้วนักเรียนจะแก้ไขงานไม่ได้)">
+        <i class="bi bi-key-fill me-1"></i>เฉลยใบงาน (<span id="topRevealedCount">{{ revealed_answers_count }}</span>/{{ answer_key_items|length }})
+      </button>
+
+      <form method="post" class="m-0"
+            onsubmit="return confirm('ยืนยันให้คะแนนทั้งหมด (+{{ bulk_grade_info.next_score|floatformat:0 }} คะแนน · ครั้งที่ {{ bulk_grade_info.batch_no }}) แก่นักเรียนห้อง {{ selected_room_label|escapejs }} ที่ส่งงานแล้ว {{ ungraded_submitted_count }} คน?')">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="grade_all_submitted">
+        <input type="hidden" name="room" value="{{ selected_room }}">
+        <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+        <input type="hidden" name="draw_date" value="{{ draw_date_str }}">
+        {% if selected_draw %}<input type="hidden" name="selected_draw_id" value="{{ selected_draw.id }}">{% endif %}
+        <button type="submit"
+                class="btn btn-sm btn-success fw-bold shadow-sm {% if ungraded_submitted_count == 0 %}disabled{% endif %}"
+                title="ให้คะแนนนักเรียนทุกคนในห้องที่ส่งงานแล้ว (ครั้งแรกเต็ม ครั้งถัดไปลดทีละ 1 จนเหลือ 1 คะแนน)">
+          <i class="bi bi-award-fill me-1"></i>ให้คะแนนทั้งหมด (ครั้งที่ {{ bulk_grade_info.batch_no }}: +{{ bulk_grade_info.next_score|floatformat:0 }} · รอ {{ ungraded_submitted_count }} คน)
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if selected_activity and has_other_activity_draws %}
+  <div class="alert alert-info py-1 px-2 mt-2 mb-0 small d-flex flex-wrap justify-content-between align-items-center">
+    <span>
+      <i class="bi bi-info-circle-fill me-1"></i>
+      ในรอบที่ {{ active_round }} มีรายชื่อที่สุ่มจากกิจกรรมอื่นแล้ว <b>{{ other_activity_drawn_count }} คน</b> —
+      เลือก <b>"สุ่มต่อจากเดิม"</b> (เหลือ {{ eligible_continue_count }} คน) หรือ <b>"เริ่มสุ่มใหม่"</b> ({{ eligible_reset_count }} คน)
+    </span>
+    <span class="badge bg-dark">ส่งงานแล้ว {{ submitted_count }}/{{ total_room_students }} คน</span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- พื้นที่หลัก: เวทีแสดงคำตอบนักเรียนขนาดใหญ่ + Zoom ได้ (ซ้าย) และคิวรายชื่อ 1 บรรทัด/คน (ขวา) -->
+<div class="row g-2">
+  <div class="col-lg-9" id="stageCol">
+    <div class="pres-stage-card" id="presentationStageCard">
+      <!-- มุมซ้ายบน: ชื่อ-นามสกุล เลขที่ ห้อง กิจกรรม (แสดงที่นี่ที่เดียว ไม่ซ้ำซ้อนบนเวที) -->
+      <div class="pres-stage-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2" id="stagePresenterHeader">
+          {% if selected_draw %}
+            {% if selected_draw.student.avatar_url %}
+              <img src="{{ selected_draw.student.avatar_url }}" class="avatar-circle" style="width:44px;height:44px;">
+            {% else %}
+              <span class="avatar-circle" style="width:44px;height:44px;">{{ selected_draw.student.avatar_initial }}</span>
+            {% endif %}
+            <div>
+              <div class="fw-bold fs-6">
+                #{{ selected_draw.order_index }} · {{ selected_draw.student_short_fullname }}
+                <span class="badge bg-warning text-dark ms-1">เลขที่ {{ selected_draw.student.class_number }} · {{ selected_draw.student.room_display }}</span>
+              </div>
+              <div class="small text-info">
+                {{ selected_draw_short_act_label }}
+                {% if selected_draw.is_graded or selected_draw.submission.score_awarded != None %}
+                  <span class="badge bg-success ms-1">ให้คะแนนแล้ว</span>
+                {% endif %}
+              </div>
+            </div>
+          {% else %}
+            <div class="fw-bold text-warning">
+              <i class="bi bi-display me-2"></i>{% if selected_activity %}{{ selected_activity.title }}{% else %}เลือกกิจกรรมเพื่อเริ่มนำเสนอ{% endif %}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          <button type="button" class="btn btn-sm btn-outline-light" onclick="stepPresenter(-1)" title="คนก่อนหน้า">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-light" onclick="stepPresenter(1)" title="คนถัดไป">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+          <div class="vr bg-secondary mx-1"></div>
+          <button type="button" class="btn btn-sm btn-outline-warning" onclick="adjustZoom(-0.25)" title="ย่อ (-)">
+            <i class="bi bi-zoom-out"></i>
+          </button>
+          <span class="badge bg-light text-dark px-2 py-1 fw-bold" id="zoomPctLabel" style="min-width:52px;">100%</span>
+          <button type="button" class="btn btn-sm btn-outline-warning" onclick="adjustZoom(0.25)" title="ขยาย (+)">
+            <i class="bi bi-zoom-in"></i>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-light" onclick="resetZoom()" title="ขนาดพอดีหน้าจอ">Fit</button>
+          <button type="button" class="btn btn-sm btn-outline-info" id="toggleSidebarBtn" onclick="toggleQueuePanel()">
+            <i class="bi bi-arrows-expand-vertical me-1"></i>ซ่อนรายชื่อ
+          </button>
+          <button type="button" class="btn btn-sm btn-warning fw-bold text-dark" onclick="toggleStageFullscreen()">
+            <i class="bi bi-fullscreen me-1"></i>เต็มจอ
+          </button>
+        </div>
+      </div>
+
+      <!-- พื้นที่เวทีกลาง: แสดงเฉพาะคำตอบ/รูปภาพของนักเรียนเท่านั้น ไม่มีคำถาม ไม่มีเฉลย ไม่มีชื่อซ้ำ -->
+      <div class="pres-zoom-viewport" id="workZoomViewport" title="ใช้ลูกกลิ้งเมาส์เพื่อ Zoom, ดับเบิลคลิกเพื่อขยาย, คลิกค้างเพื่อลากเลื่อน">
+        <div class="pres-zoom-canvas" id="workZoomCanvas">
+          {% if selected_draw and selected_draw.submission %}
+            {% if selected_draw_is_image %}
+              <img src="{{ selected_draw.submission.work_file.url }}" alt="ผลงานนักเรียน" class="pres-stage-img" id="stageWorkImg">
+            {% else %}
+              <div class="pres-qa-card" id="stageQaCard">
+                <div class="pres-qa-answer">{{ selected_draw_answer_text|default:"-" }}</div>
+                {% if selected_draw.submission.work_file %}
+                  <a href="{{ selected_draw.submission.work_file.url }}" target="_blank" class="btn btn-sm btn-outline-primary mt-3">เปิดไฟล์แนบ</a>
+                {% endif %}
+              </div>
+            {% endif %}
+          {% else %}
+            <div class="text-center text-light opacity-75 p-4">
+              <i class="bi bi-easel2 display-1 d-block mb-3 text-warning"></i>
+              <h4 class="fw-bold">ยังไม่มีผู้ถูกสุ่มนำเสนอในรอบนี้</h4>
+              <p class="mb-0">ระบุจำนวนนักเรียนที่ต้องการสุ่มด้านบน แล้วกดปุ่ม <b>"สุ่มรายชื่อ"</b> เพื่อแสดงคำตอบนักเรียน</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- แถบปุ่มให้คะแนน / นำออก (ไม่แสดงคำตอบหรือชื่อซ้ำซ้อน) -->
+      <div class="pres-stage-footer d-flex flex-wrap justify-content-end align-items-center gap-2 {% if not selected_draw %}d-none{% endif %}" id="stageFooterBar">
+        <form method="post" class="d-flex align-items-center gap-1 m-0" id="stageGradeForm">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="grade_draw">
+          <input type="hidden" name="room" value="{{ selected_room }}">
+          <input type="hidden" name="activity_id" value="{{ selected_activity.id|default:'' }}">
+          <input type="hidden" name="draw_date" value="{{ draw_date_str }}">
+          <input type="hidden" name="draw_id" id="stageGradeDrawId" value="{{ selected_draw.id|default:'' }}">
+          <input type="number" step="0.5" name="score_awarded" id="stageGradeScoreInput"
+                 class="form-control form-control-sm fw-bold text-center" style="width:70px;"
+                 value="{{ selected_draw.activity.max_score|default:5 }}" required>
+          <input type="text" name="feedback" id="stageGradeFeedbackInput"
+                 class="form-control form-control-sm" style="width:140px;" placeholder="ข้อเสนอแนะ">
+          <button type="submit" class="btn btn-sm btn-success fw-bold" id="stageGradeSubmitBtn">
+            <i class="bi bi-check2-circle me-1"></i>ให้คะแนน
+          </button>
+        </form>
+        <form method="post" class="d-flex align-items-center gap-1 m-0" id="stageRemoveForm">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="remove_draw">
+          <input type="hidden" name="room" value="{{ selected_room }}">
+          <input type="hidden" name="activity_id" value="{{ selected_activity.id|default:'' }}">
+          <input type="hidden" name="draw_date" value="{{ draw_date_str }}">
+          <input type="hidden" name="draw_id" id="stageRemoveDrawId" value="{{ selected_draw.id|default:'' }}">
+          <input type="hidden" name="removed_reason" value="ไม่อยู่ในห้อง / ข้ามรอบนำเสนอ">
+          <button type="submit" class="btn btn-sm btn-outline-danger fw-bold">
+            <i class="bi bi-x-circle me-1"></i>นำออก
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- แถบรายชื่อด้านข้าง: มีแค่ ชื่อ นามสกุล (เลขที่) กิจกรรมที่ x — 1 บรรทัด/คน, เปิดดูแล้วเปลี่ยนแถบเป็นสีเขียวสบายตา -->
+  <div class="col-lg-3" id="queueCol">
+    <div class="card mb-2 shadow-sm">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center bg-light">
+        <span class="small fw-bold text-dark"><i class="bi bi-list-ol me-1"></i>คิวสุ่มรอบที่ {{ active_round }} ({{ selected_room_label }})</span>
+        <span class="badge bg-dark">{{ active_draws|length }} คน</span>
+      </div>
+      <div class="list-group list-group-flush pres-queue-list" id="presenterQueueList">
+        {% for d in active_draws %}
+        <div class="list-group-item py-2 px-2 pres-queue-item {% if selected_draw and d.id == selected_draw.id %}is-current is-viewed{% endif %}"
+             data-draw-id="{{ d.id }}"
+             onclick="selectPresenterById({{ d.id }})"
+             title="{{ d.student_short_fullname }} ({{ d.student.class_number }}) {{ d.short_activity_label }}">
+          <div class="pres-queue-line">{{ d.student_short_fullname }} ({{ d.student.class_number }}) {{ d.short_activity_label }}</div>
+        </div>
+        {% empty %}
+        <div class="text-center text-muted py-4 small">ยังไม่มีรายชื่อสุ่มในรอบนี้</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if bulk_grade_info.prior_batches %}
+    <div class="card mb-2 shadow-sm">
+      <div class="card-header py-2 small fw-bold bg-success-subtle text-dark">
+        <i class="bi bi-layers-fill text-success me-1"></i>ประวัติให้คะแนนทั้งหมด ({{ selected_activity.title|truncatechars:18 }})
+      </div>
+      <div class="list-group list-group-flush small">
+        {% for b in bulk_grade_info.prior_batches %}
+        <div class="list-group-item py-1 px-2 d-flex justify-content-between align-items-center">
+          <span>ครั้งที่ {{ b.batch_no }} · {{ b.graded_count }} คน</span>
+          <span class="badge bg-success">+{{ b.score_given|floatformat:0 }} คะแนน</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if removed_draws %}
+    <div class="card shadow-sm">
+      <div class="card-header py-2 small fw-bold bg-light">
+        <a class="text-decoration-none text-danger" data-bs-toggle="collapse" href="#presRemovedCollapse">
+          <i class="bi bi-eye-slash me-1"></i>นำออกจากรายการแล้ว ({{ removed_draws|length }})
+        </a>
+      </div>
+      <div class="collapse" id="presRemovedCollapse">
+        <div class="list-group list-group-flush small">
+          {% for rd in removed_draws %}
+          <div class="list-group-item py-1 px-2 d-flex justify-content-between align-items-center">
+            <span class="text-truncate">{{ rd.student.first_name }} {{ rd.student.last_name }} ({{ rd.student.class_number }})</span>
+            <form method="post" class="m-0">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="restore_draw">
+              <input type="hidden" name="room" value="{{ selected_room }}">
+              <input type="hidden" name="activity_id" value="{{ selected_activity.id|default:'' }}">
+              <input type="hidden" name="draw_date" value="{{ draw_date_str }}">
+              <input type="hidden" name="draw_id" value="{{ rd.id }}">
+              <button type="submit" class="btn btn-sm btn-link p-0 small">คืนคิว</button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Modal ควบคุมเปิด/ปิด เฉลยใบงานรายข้อ & ฉายเฉลยขึ้นเวที -->
+{% if selected_activity %}
+<div class="modal fade" id="answerKeyControlModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white py-2">
+        <h6 class="modal-title fw-bold"><i class="bi bi-key-fill text-warning me-2"></i>เฉลยใบงาน: {{ selected_activity.title }}</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-3">
+        <div class="alert alert-warning py-2 px-3 small mb-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <span><i class="bi bi-lock-fill me-1"></i>หากเปิดเฉลยข้อใดแล้ว นักเรียนจะเห็นปุ่ม <b>"ดูเฉลยใบงาน"</b> และจะไม่มีสิทธิ์แก้ไขงานนี้ได้อีก</span>
+          <div class="d-flex gap-1">
+            <form method="post" class="m-0">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="reveal_all_answers">
+              <input type="hidden" name="room" value="{{ selected_room }}">
+              <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+              <input type="hidden" name="draw_date" value="{{ draw_date_str }}">
+              <button type="submit" class="btn btn-sm btn-success fw-bold">เปิดทั้งหมด</button>
+            </form>
+            <form method="post" class="m-0">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="hide_all_answers">
+              <input type="hidden" name="room" value="{{ selected_room }}">
+              <input type="hidden" name="activity_id" value="{{ selected_activity.id }}">
+              <input type="hidden" name="draw_date" value="{{ draw_date_str }}">
+              <button type="submit" class="btn btn-sm btn-outline-secondary fw-bold">ปิดทั้งหมด</button>
+            </form>
+            <a href="{% url 'core:teacher_activity_edit' selected_activity.id %}?tab=answer" class="btn btn-sm btn-outline-primary fw-bold">แก้ไขเฉลย &rarr;</a>
+          </div>
+        </div>
+
+        {% for ak in answer_key_items %}
+        <div class="border rounded-3 p-2 mb-2 d-flex flex-wrap justify-content-between align-items-center gap-2 {% if ak.is_revealed %}bg-success-subtle border-success{% else %}bg-light{% endif %}" id="akRow_{{ ak.id }}">
+          <div class="flex-grow-1">
+            <div class="fw-bold small">
+              ข้อที่ {{ ak.order_no }}: {{ ak.title }}
+              <span class="badge {% if ak.is_revealed %}bg-success{% else %}bg-secondary{% endif %} ms-1" id="akBadge_{{ ak.id }}">
+                {% if ak.is_revealed %}เปิดเฉลยแล้ว (นักเรียนดูได้){% else %}ซ่อนอยู่{% endif %}
+              </span>
+            </div>
+          </div>
+          <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-warning fw-bold text-dark" onclick="projectAnswerItemToStage({{ ak.id }})">
+              <i class="bi bi-display me-1"></i>ฉายขึ้นเวที (Zoom)
+            </button>
+            <button type="button" class="btn btn-sm {% if ak.is_revealed %}btn-outline-danger{% else %}btn-success{% endif %} fw-bold" id="akToggleBtn_{{ ak.id }}"
+                    onclick="toggleAnswerItemAjax({{ selected_activity.id }}, {{ ak.id }})">
+              {% if ak.is_revealed %}ปิดเฉลยข้อนี้{% else %}เปิดเฉลยข้อนี้{% endif %}
+            </button>
+          </div>
+        </div>
+        {% empty %}
+        <div class="text-center text-muted py-4 small">
+          ยังไม่มีข้อเฉลยสำหรับใบงานนี้ — <a href="{% url 'core:teacher_activity_edit' selected_activity.id %}?tab=answer" class="fw-bold">ไปสร้างเฉลยใบงาน</a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const PRESENTERS = {{ presenters_json|safe }};
+const ANSWER_ITEMS = {{ answer_items_json|default:'[]'|safe }};
+const CSRF_TOKEN_PRES = '{{ csrf_token }}';
+const ELIGIBLE_CONTINUE = {{ eligible_continue_count|default:0 }};
+const ELIGIBLE_RESET = {{ eligible_reset_count|default:0 }};
+const ELIGIBLE_REG_CONTINUE = {{ eligible_reg_continue_count|default:0 }};
+const ELIGIBLE_REG_RESET = {{ eligible_reg_reset_count|default:0 }};
+const VIEWED_STORAGE_KEY = 'pres_viewed_{{ draw_date_str|escapejs }}_{{ active_round }}';
+
+let currentPresenterIdx = 0;
+{% if selected_draw %}
+currentPresenterIdx = Math.max(0, PRESENTERS.findIndex(p => p.draw_id === {{ selected_draw.id }}));
+{% endif %}
+
+const viewedDrawIds = new Set();
+try {
+  const savedIds = JSON.parse(sessionStorage.getItem(VIEWED_STORAGE_KEY) || '[]');
+  if (Array.isArray(savedIds)) savedIds.forEach(id => viewedDrawIds.add(Number(id)));
+} catch (e) {}
+
+function markPresenterViewed(drawId) {
+  const idNum = Number(drawId);
+  if (!idNum) return;
+  viewedDrawIds.add(idNum);
+  try {
+    sessionStorage.setItem(VIEWED_STORAGE_KEY, JSON.stringify(Array.from(viewedDrawIds)));
+  } catch (e) {}
+  document.querySelectorAll('#presenterQueueList .pres-queue-item').forEach(el => {
+    const elId = Number(el.dataset.drawId);
+    if (viewedDrawIds.has(elId)) el.classList.add('is-viewed');
+    el.classList.toggle('is-current', elId === idNum);
+  });
+}
+
+let zoomScale = 1.0;
+let panX = 0;
+let panY = 0;
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+
+function getCurrentDrawBounds() {
+  const onlyReg = !!document.getElementById('onlyRegisteredChk')?.checked;
+  const contMax = onlyReg ? ELIGIBLE_REG_CONTINUE : ELIGIBLE_CONTINUE;
+  const resetMax = onlyReg ? ELIGIBLE_REG_RESET : ELIGIBLE_RESET;
+  return { onlyReg, contMax, resetMax };
+}
+
+function syncDrawModeBounds() {
+  const { contMax, resetMax } = getCurrentDrawBounds();
+  const cEl = document.getElementById('continueRemainTxt');
+  const rEl = document.getElementById('resetRemainTxt');
+  if (cEl) cEl.innerText = contMax;
+  if (rEl) rEl.innerText = resetMax;
+
+  const isReset = document.getElementById('modeReset')?.checked;
+  const maxAllowed = isReset ? resetMax : contMax;
+  const inp = document.getElementById('drawCountInput');
+  const hint = document.getElementById('drawMaxHint');
+  if (inp) {
+    inp.max = Math.max(1, maxAllowed);
+    if (maxAllowed > 0 && Number(inp.value) > maxAllowed) {
+      inp.value = maxAllowed;
+    }
+  }
+  if (hint) hint.innerText = `/ สูงสุด ${maxAllowed} คน`;
+}
+
+function validateDrawCount() {
+  const { onlyReg, contMax, resetMax } = getCurrentDrawBounds();
+  const isReset = document.getElementById('modeReset')?.checked;
+  const maxAllowed = isReset ? resetMax : contMax;
+  const inp = document.getElementById('drawCountInput');
+  const val = parseInt(inp?.value || '0', 10);
+  if (!val || val < 1) {
+    alert('กรุณาระบุจำนวนคนที่จะสุ่มตั้งแต่ 1 คนขึ้นไป');
+    return false;
+  }
+  if (val > maxAllowed) {
+    const note = onlyReg ? 'ที่ลงทะเบียนแล้วและ' : '';
+    alert(`จำนวนที่ระบุ (${val} คน) เกินจำนวนนักเรียน${note}ส่งงานและคงเหลือให้สุ่ม (${maxAllowed} คน)`);
+    return false;
+  }
+  return true;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  syncDrawModeBounds();
+});
+
+function applyTransform() {
+  const canvas = document.getElementById('workZoomCanvas');
+  if (canvas) {
+    canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
+  }
+  const lbl = document.getElementById('zoomPctLabel');
+  if (lbl) lbl.innerText = `${Math.round(zoomScale * 100)}%`;
+}
+
+function adjustZoom(delta) {
+  zoomScale = Math.min(4.0, Math.max(0.5, Number((zoomScale + delta).toFixed(2))));
+  if (zoomScale <= 1.0) { panX = 0; panY = 0; }
+  applyTransform();
+}
+
+function resetZoom() {
+  zoomScale = 1.0;
+  panX = 0;
+  panY = 0;
+  applyTransform();
+}
+
+function toggleQueuePanel() {
+  const qCol = document.getElementById('queueCol');
+  const sCol = document.getElementById('stageCol');
+  const btn = document.getElementById('toggleSidebarBtn');
+  if (!qCol || !sCol) return;
+  const hidden = qCol.classList.toggle('d-none');
+  sCol.classList.toggle('col-lg-9', !hidden);
+  sCol.classList.toggle('col-12', hidden);
+  if (btn) {
+    btn.innerHTML = hidden
+      ? '<i class="bi bi-layout-sidebar-inset-reverse me-1"></i>แสดงรายชื่อ'
+      : '<i class="bi bi-arrows-expand-vertical me-1"></i>ซ่อนรายชื่อ';
+  }
+}
+
+function toggleStageFullscreen() {
+  const card = document.getElementById('presentationStageCard');
+  if (!card) return;
+  if (!document.fullscreenElement) {
+    if (card.requestFullscreen) card.requestFullscreen();
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+  }
+}
+
+function escapeHtmlPres(str) {
+  return String(str || '').replace(/[&<>"']/g, s => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[s]));
+}
+
+function renderPresenterStage(p) {
+  if (!p) return;
+  resetZoom();
+  const hdr = document.getElementById('stagePresenterHeader');
+  if (hdr) {
+    const avatarHtml = p.avatar_url
+      ? `<img src="${escapeHtmlPres(p.avatar_url)}" class="avatar-circle" style="width:44px;height:44px;">`
+      : `<span class="avatar-circle" style="width:44px;height:44px;">${escapeHtmlPres(p.avatar_initial)}</span>`;
+    const gradedBadge = p.is_graded
+      ? `<span class="badge bg-success ms-1">ให้คะแนนแล้ว (+${p.score_awarded ?? ''})</span>`
+      : '';
+    hdr.innerHTML = `
+      ${avatarHtml}
+      <div>
+        <div class="fw-bold fs-6">
+          #${p.order_index} · ${escapeHtmlPres(p.student_name)}
+          <span class="badge bg-warning text-dark ms-1">เลขที่ ${p.class_number} · ${escapeHtmlPres(p.room_display)}</span>
+        </div>
+        <div class="small text-info">${escapeHtmlPres(p.short_activity_label)} ${gradedBadge}</div>
+      </div>
+    `;
+  }
+
+  const canvas = document.getElementById('workZoomCanvas');
+  if (canvas) {
+    if (p.is_image && p.file_url) {
+      canvas.innerHTML = `<img src="${escapeHtmlPres(p.file_url)}" alt="ผลงานนักเรียน" class="pres-stage-img">`;
+    } else {
+      canvas.innerHTML = `
+        <div class="pres-qa-card">
+          <div class="pres-qa-answer">${escapeHtmlPres(p.answer_text || '-')}</div>
+          ${p.file_url ? `<a href="${escapeHtmlPres(p.file_url)}" target="_blank" class="btn btn-sm btn-outline-primary mt-3">เปิดไฟล์แนบ</a>` : ''}
+        </div>
+      `;
+    }
+  }
+
+  const gradeDid = document.getElementById('stageGradeDrawId');
+  const remDid = document.getElementById('stageRemoveDrawId');
+  const scoreInp = document.getElementById('stageGradeScoreInput');
+  const fbInp = document.getElementById('stageGradeFeedbackInput');
+  const footerBox = document.getElementById('stageFooterBar');
+  if (gradeDid) gradeDid.value = p.draw_id;
+  if (remDid) remDid.value = p.draw_id;
+  if (scoreInp) scoreInp.value = p.max_score;
+  if (fbInp) fbInp.value = p.feedback || '';
+  if (footerBox) footerBox.classList.remove('d-none');
+
+  markPresenterViewed(p.draw_id);
+}
+
+function selectPresenterById(drawId) {
+  const idx = PRESENTERS.findIndex(p => p.draw_id === Number(drawId));
+  if (idx >= 0) {
+    currentPresenterIdx = idx;
+    renderPresenterStage(PRESENTERS[idx]);
+  }
+}
+
+function stepPresenter(step) {
+  if (!PRESENTERS.length) return;
+  currentPresenterIdx = (currentPresenterIdx + step + PRESENTERS.length) % PRESENTERS.length;
+  renderPresenterStage(PRESENTERS[currentPresenterIdx]);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  syncDrawModeBounds();
+  if (PRESENTERS[currentPresenterIdx]) {
+    markPresenterViewed(PRESENTERS[currentPresenterIdx].draw_id);
+  }
+  const vp = document.getElementById('workZoomViewport');
+  if (vp) {
+    vp.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      adjustZoom(e.deltaY < 0 ? 0.15 : -0.15);
+    }, { passive: false });
+
+    vp.addEventListener('dblclick', () => {
+      if (zoomScale > 1.2) resetZoom();
+      else { zoomScale = 2.0; applyTransform(); }
+    });
+
+    vp.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      dragStartX = e.clientX - panX;
+      dragStartY = e.clientY - panY;
+      vp.classList.add('is-dragging');
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      panX = e.clientX - dragStartX;
+      panY = e.clientY - dragStartY;
+      applyTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+      vp.classList.remove('is-dragging');
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) {
+      return;
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      stepPresenter(-1);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      stepPresenter(1);
+    }
+  });
+});
+
+function toggleAnswerItemAjax(activityId, itemId) {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN_PRES);
+  fd.append('mode', 'single');
+  fd.append('item_id', itemId);
+
+  fetch(`/api/activities/${activityId}/toggle-answer-item/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      const topCnt = document.getElementById('topRevealedCount');
+      if (topCnt) topCnt.innerText = data.revealed_count;
+      const found = (data.items || []).find(it => it.id === Number(itemId));
+      if (!found) return;
+      const row = document.getElementById(`akRow_${itemId}`);
+      const badge = document.getElementById(`akBadge_${itemId}`);
+      const btn = document.getElementById(`akToggleBtn_${itemId}`);
+      if (row) {
+        row.classList.toggle('bg-success-subtle', found.is_revealed);
+        row.classList.toggle('border-success', found.is_revealed);
+        row.classList.toggle('bg-light', !found.is_revealed);
+      }
+      if (badge) {
+        badge.className = `badge ms-1 ${found.is_revealed ? 'bg-success' : 'bg-secondary'}`;
+        badge.innerText = found.is_revealed ? 'เปิดเฉลยแล้ว (นักเรียนดูได้)' : 'ซ่อนอยู่';
+      }
+      if (btn) {
+        btn.className = `btn btn-sm fw-bold ${found.is_revealed ? 'btn-outline-danger' : 'btn-success'}`;
+        btn.innerText = found.is_revealed ? 'ปิดเฉลยข้อนี้' : 'เปิดเฉลยข้อนี้';
+      }
+    });
+}
+
+function projectAnswerItemToStage(itemId) {
+  const ak = ANSWER_ITEMS.find(x => x.id === Number(itemId));
+  if (!ak) return;
+  resetZoom();
+  const hdr = document.getElementById('stagePresenterHeader');
+  if (hdr) {
+    hdr.innerHTML = `<div class="fw-bold text-warning fs-6"><i class="bi bi-key-fill me-2"></i>เฉลยข้อที่ ${ak.order_no}: ${escapeHtmlPres(ak.title)}</div>`;
+  }
+  const canvas = document.getElementById('workZoomCanvas');
+  if (canvas) {
+    const pdfHtml = ak.pdf_url
+      ? `<div class="mt-3"><a href="${escapeHtmlPres(ak.pdf_url)}" target="_blank" class="btn btn-sm btn-outline-primary mb-2">ดาวน์โหลด PDF เฉลย</a>${ak.pdf_display_mode === 'embed' ? `<iframe src="${escapeHtmlPres(ak.pdf_url)}" style="width:760px;max-width:100%;height:420px;border:1px solid #cbd5e1;border-radius:8px;"></iframe>` : ''}</div>`
+      : '';
+    canvas.innerHTML = `
+      <div class="pres-qa-card text-start" style="max-width:880px;">
+        <div class="fs-5 text-dark">${ak.content_html || '-'}</div>
+        ${pdfHtml}
+      </div>
+    `;
+  }
+  const footerBox = document.getElementById('stageFooterBar');
+  if (footerBox) footerBox.classList.add('d-none');
+  const modalEl = document.getElementById('answerKeyControlModal');
+  if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+}
+</script>
+{% endblock %}

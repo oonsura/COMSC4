@@ -1,0 +1,221 @@
+{% extends 'base.html' %}
+{% block title %}ข้อมูลส่วนตัว - COMSC4{% endblock %}
+{% block page_header %}ข้อมูลส่วนตัว &amp; ระบบหมุน/Crop รูปประจำตัว{% endblock %}
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" rel="stylesheet">
+<style>
+  .crop-preview-area {
+    max-height: 360px;
+    background: #0f172a;
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .crop-preview-area img { max-width: 100%; max-height: 350px; display: block; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <!-- กล่องอัปโหลด หมุน และ Crop รูปประจำตัว -->
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header">
+        <i class="bi bi-crop text-success me-2"></i>รูปภาพประจำตัว (รองรับการหมุนและ Crop สัดส่วน 1:1)
+      </div>
+      <div class="card-body text-center">
+        <div class="mb-3">
+          {% if user.avatar_url %}
+            <img src="{{ user.avatar_url }}" alt="Avatar" class="avatar-circle avatar-xl mb-2">
+          {% else %}
+            <div class="avatar-circle avatar-xl mx-auto mb-2">{{ user.avatar_initial }}</div>
+          {% endif %}
+          <div class="small text-muted">
+            รูปนี้จะแสดงในหน้าคะแนน หน้ากิจกรรม หน้าสุ่มนำเสนอ และระบบสุ่ม ID LOTTO
+          </div>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" id="avatarCropForm">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="upload_cropped_avatar">
+          <input type="hidden" name="cropped_image_data" id="croppedImageData">
+          <input type="hidden" name="rotate_deg" id="rotateDegInput" value="0">
+
+          <div class="mb-3 text-start">
+            <label class="form-label small fw-bold">1. เลือกไฟล์รูปภาพจากเครื่อง</label>
+            <input type="file" name="avatar_file" id="avatarFileInput" class="form-control" accept="image/*" required>
+          </div>
+
+          <div id="cropperWrapper" class="d-none mb-3">
+            <div class="crop-preview-area mb-2">
+              <img id="cropperTargetImage" src="" alt="Crop Preview">
+            </div>
+            <div class="d-flex flex-wrap justify-content-center gap-1 mb-2">
+              <button type="button" class="btn btn-sm btn-outline-dark" onclick="rotateCrop(-90)">
+                <i class="bi bi-arrow-counterclockwise"></i> หมุนซ้าย 90°
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-dark" onclick="rotateCrop(90)">
+                <i class="bi bi-arrow-clockwise"></i> หมุนขวา 90°
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-dark" onclick="rotateCrop(45)">
+                <i class="bi bi-arrow-repeat"></i> หมุน 45°
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="zoomCrop(0.1)">
+                <i class="bi bi-zoom-in"></i> ซูมเข้า
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="zoomCrop(-0.1)">
+                <i class="bi bi-zoom-out"></i> ซูมออก
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-danger" onclick="resetCrop()">
+                รีเซ็ต
+              </button>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-success w-100 fw-bold">
+            <i class="bi bi-check2-circle me-1"></i>บันทึกรูปที่หมุนและ Crop แล้ว
+          </button>
+        </form>
+
+        {% if user.avatar_url %}
+        <form method="post" class="mt-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_avatar">
+          <button type="submit" class="btn btn-sm btn-link text-danger">
+            <i class="bi bi-trash me-1"></i>ลบรูปประจำตัว (กลับไปใช้รูปตัวอักษรเริ่มต้น)
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- กล่องข้อมูลนักเรียน (A.3) และ Session ที่ออนไลน์ -->
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-person-vcard text-primary me-2"></i>ข้อมูลนักเรียน </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_info">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small text-muted">เลขประจำตัวนักเรียน (รหัสอ้างอิงหลัก)</label>
+              <input type="text" class="form-control bg-light fw-bold" value="{{ user.student_id|default:user.username }}" readonly>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">อีเมลโรงเรียน (Google OAuth)</label>
+              <input type="text" class="form-control bg-light" value="{{ user.email }}" readonly>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">ชื่อ - นามสกุล</label>
+              <input type="text" class="form-control bg-light" value="{{ user.get_full_name }}" readonly>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small text-muted">ชั้น / ห้อง</label>
+              <input type="text" class="form-control bg-light" value="{{ user.room_display }}" readonly>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small text-muted">เลขที่</label>
+              <input type="text" class="form-control bg-light" value="{{ user.class_number }}" readonly>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">กลุ่มเรียน (อนุญาตให้แก้ไข)</label>
+              <input type="text" name="group_name" class="form-control" value="{{ user.group_name }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">เบอร์โทรศัพท์ติดต่อ</label>
+              <input type="text" name="phone" class="form-control" value="{{ profile.phone }}" placeholder="08x-xxx-xxxx">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small text-muted">คะแนนรวมอัตโนมัติ</label>
+              <input type="text" class="form-control bg-warning-subtle fw-bold text-dark" value="{{ user.total_score|floatformat:1 }} คะแนน" readonly>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-bold">ข้อความแนะนำตัว (Bio)</label>
+              <input type="text" name="bio" class="form-control" value="{{ profile.bio }}" placeholder="เช่น ชอบเขียนโปรแกรม Python และอัลกอริทึม">
+            </div>
+          </div>
+          <div class="mt-3 text-end">
+            <button type="submit" class="btn btn-primary fw-bold">
+              <i class="bi bi-save me-1"></i>บันทึกข้อมูลส่วนตัว
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="bi bi-laptop text-success me-2"></i>สถานะ Session ปัจจุบันของคุณ (จำกัด 1 Session ต่อบัญชี)</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>อุปกรณ์ / เบราว์เซอร์</th><th>IP Address</th><th>เข้าใช้งานล่าสุด</th><th>สถานะ</th></tr>
+          </thead>
+          <tbody>
+            {% for s in active_sessions %}
+            <tr>
+              <td>{{ s.device_info }}</td>
+              <td><code>{{ s.ip_address }}</code></td>
+              <td class="small">{{ s.last_active|date:"d/m/Y H:i:s" }}</td>
+              <td><span class="badge bg-success">Active (1 Session)</span></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-3">ออนไลน์บนอุปกรณ์นี้</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<script>
+let cropper = null;
+let totalRotation = 0;
+const fileInput = document.getElementById('avatarFileInput');
+const wrapper = document.getElementById('cropperWrapper');
+const targetImg = document.getElementById('cropperTargetImage');
+const croppedDataInput = document.getElementById('croppedImageData');
+const rotateDegInput = document.getElementById('rotateDegInput');
+
+fileInput.addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    targetImg.src = evt.target.result;
+    wrapper.classList.remove('d-none');
+    if (cropper) cropper.destroy();
+    totalRotation = 0;
+    cropper = new Cropper(targetImg, {
+      aspectRatio: 1,
+      viewMode: 1,
+      autoCropArea: 0.9,
+      responsive: true,
+    });
+  };
+  reader.readAsDataURL(file);
+});
+
+function rotateCrop(deg) {
+  totalRotation = (totalRotation + deg) % 360;
+  rotateDegInput.value = totalRotation;
+  if (cropper) cropper.rotate(deg);
+}
+function zoomCrop(ratio) { if (cropper) cropper.zoom(ratio); }
+function resetCrop() { totalRotation = 0; rotateDegInput.value = 0; if (cropper) cropper.reset(); }
+
+document.getElementById('avatarCropForm').addEventListener('submit', function(e) {
+  if (cropper) {
+    const canvas = cropper.getCroppedCanvas({ width: 480, height: 480 });
+    if (canvas) {
+      croppedDataInput.value = canvas.toDataURL('image/jpeg', 0.9);
+    }
+  }
+});
+</script>
+{% endblock %}

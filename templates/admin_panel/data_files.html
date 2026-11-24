@@ -1,0 +1,426 @@
+{% extends 'base.html' %}
+{% block title %}ปีการศึกษา &amp; ไฟล์ข้อมูล - COMSC4{% endblock %}
+{% block page_header %}ขึ้นปีการศึกษาใหม่, คัดลอกบทเรียน/กิจกรรม &amp; ไฟล์ข้อมูลสะสมรายปีการศึกษา{% endblock %}
+{% block content %}
+{% include 'admin_panel/_settings_nav.html' %}
+
+<div class="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between gap-2 shadow-sm mb-3">
+  <div>
+    <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>
+    <b>การลบไฟล์ ลบข้อมูลทั้งปี หรือรีเซ็ตเกมทั้งหมด:</b>
+    ทุกคำสั่งที่มีผลต่อข้อมูลจะแสดงข้อความแจ้งเตือนและต้องยืนยันด้วย <b>รหัสผ่าน Admin ล่าสุด</b> ทุกครั้ง
+  </div>
+  <span class="badge bg-primary fs-6">ปีการศึกษาปัจจุบัน: {{ current_academic_year }}</span>
+</div>
+
+<!-- 1. ขึ้นปีการศึกษาใหม่ & สลับปีการศึกษา -->
+<div class="row g-3 mb-3" id="newAcademicYearCard">
+  <div class="col-lg-5">
+    <div class="card shadow-sm h-100 border-start border-4 border-primary">
+      <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar-check-fill me-2"></i>ปีการศึกษาที่เปิดใช้งานปัจจุบัน</span>
+        <span class="badge bg-light text-primary fw-bold">ปี {{ current_academic_year }}</span>
+      </div>
+      <div class="card-body d-flex flex-column justify-content-between gap-3">
+        <div>
+          <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="switch_academic_year">
+            <div class="col-8">
+              <label class="form-label small fw-bold mb-1">สลับไปยังปีการศึกษาที่สร้างไว้แล้ว</label>
+              <select name="target_year" class="form-select form-select-sm fw-bold">
+                {% for ay in academic_years %}
+                <option value="{{ ay.year }}" {% if ay.year == current_academic_year %}selected{% endif %}>
+                  ปีการศึกษา {{ ay.year }}{% if ay.is_current %} (ใช้งานอยู่){% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-4">
+              <button type="submit" class="btn btn-outline-primary btn-sm w-100 fw-bold">
+                <i class="bi bi-arrow-left-right me-1"></i>สลับปี
+              </button>
+            </div>
+          </form>
+          <div class="small text-muted mt-2">
+            การสลับปีจะสลับบทเรียน กิจกรรม รายชื่อนักเรียน ช่วงคะแนน และเกมให้ตรงกับปีการศึกษานั้น (ไม่สามารถพิมพ์เปลี่ยนปีโดยตรงได้ ต้องกดสร้างปีการศึกษาใหม่ก่อน)
+          </div>
+        </div>
+        <div class="border-top pt-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <a href="{% url 'core:teacher_import_students' %}" class="btn btn-sm btn-outline-success fw-bold">
+            <i class="bi bi-file-earmark-arrow-up me-1"></i>อัปโหลดรายชื่อนักเรียนปี {{ current_academic_year }}
+          </a>
+          <button type="button" class="btn btn-sm btn-outline-danger fw-bold"
+                  onclick="openAdminDeleteModal('reset_year_games', '{{ current_academic_year|escapejs }}', '', 'ยืนยันรีเซ็ตเกมทั้งหมด (Sorting, Bingo และ ID LOTTO) ของปีการศึกษา {{ current_academic_year|escapejs }} เพื่อเริ่มต้นใหม่ใช่หรือไม่?')">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>รีเซ็ตเกมทั้งหมด
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm h-100 border-start border-4 border-success">
+      <div class="card-header bg-success text-white">
+        <i class="bi bi-calendar-plus-fill me-2"></i>ขึ้นปีการศึกษาใหม่ (ต้องกดสร้าง)
+      </div>
+      <div class="card-body">
+        <form method="post" class="row g-2 align-items-end">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_academic_year">
+          <div class="col-md-3">
+            <label class="form-label small fw-bold mb-1">ปีการศึกษาใหม่ (พ.ศ.) <span class="text-danger">*</span></label>
+            <input type="text" name="new_year" value="{{ suggested_next_year }}" class="form-control form-control-sm fw-bold text-center" maxlength="20" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-bold mb-1">อ้างอิงโครงสร้างจากปี</label>
+            <select name="source_year" class="form-select form-select-sm fw-semibold">
+              {% for y in years %}
+              <option value="{{ y }}" {% if y == current_academic_year %}selected{% endif %}>ปีการศึกษา {{ y }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-5">
+            <label class="form-label small fw-bold mb-1">หมายเหตุ / คำอธิบาย (ถ้ามี)</label>
+            <input type="text" name="title" class="form-control form-control-sm" maxlength="120" placeholder="เช่น ภาคเรียนใหม่ {{ suggested_next_year }}">
+          </div>
+          <div class="col-12 mt-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <ul class="small text-muted mb-0 ps-3">
+              <li><b>รีเซ็ตเกมทั้งหมด</b> (Sorting, Bingo, ID LOTTO) เริ่มใหม่สำหรับปีใหม่ทันที</li>
+              <li>แยกฐานนักเรียนเพื่อ<b>อัปโหลดรายชื่อใหม่</b> (รองรับรหัสประจำตัวซ้ำกับปีเก่าได้)</li>
+              <li>เปิดหน้า<b>เลือกคัดลอกบทเรียนและกิจกรรม</b>จากปีที่ผ่านมา (ค่าเริ่มต้น: เลือกทั้งหมด)</li>
+            </ul>
+            <button type="submit" class="btn btn-success btn-sm fw-bold px-3 text-nowrap">
+              <i class="bi bi-plus-circle-fill me-1"></i>สร้างปีการศึกษาใหม่
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. คัดลอกบทเรียนและกิจกรรมจากปีที่ผ่านมา -->
+{% if available_source_years %}
+<div class="card shadow-sm mb-3 {% if setup_new_year %}border-success border-2{% else %}border-start border-4 border-info{% endif %}" id="copyFromPrevYearCard">
+  <div class="card-header {% if setup_new_year %}bg-success-subtle text-dark{% endif %} d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+      <i class="bi bi-copy text-primary me-2"></i>
+      <b>คัดลอกบทเรียน &amp; กิจกรรมจากปีการศึกษาที่ผ่านมา เข้าสู่ปี {{ current_academic_year }}</b>
+      <span class="badge bg-info text-dark ms-1">ค่าเริ่มต้น: เลือกทั้งหมด</span>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span class="small fw-semibold">ต้นทาง:</span>
+      <select class="form-select form-select-sm fw-bold" style="width:auto;"
+              onchange="if(this.value) window.location.href='?copy_from=' + encodeURIComponent(this.value) + '#copyFromPrevYearCard';">
+        {% for sy in available_source_years %}
+        <option value="{{ sy }}" {% if sy == copy_source_year %}selected{% endif %}>ปีการศึกษา {{ sy }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="card-body">
+    <form method="post" id="copyFromYearForm">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="copy_from_year">
+      <input type="hidden" name="source_year" value="{{ copy_source_year }}">
+      <input type="hidden" name="target_year" value="{{ current_academic_year }}">
+
+      <div class="row g-3">
+        <!-- บทเรียน -->
+        <div class="col-lg-6">
+          <div class="border rounded-3 p-3 h-100 bg-light">
+            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+              <span class="fw-bold text-primary"><i class="bi bi-journal-bookmark-fill me-1"></i>บทเรียนจากปี {{ copy_source_year }} ({{ source_lessons|length }})</span>
+              <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" id="chkAllLessons" checked
+                       onchange="toggleAllCopyGroup('.copy-lesson-chk', this.checked)">
+                <label class="form-check-label small fw-bold" for="chkAllLessons">เลือกทั้งหมด</label>
+              </div>
+            </div>
+            <div style="max-height:240px;overflow-y:auto;">
+              {% for l_obj in source_lessons %}
+              <label class="d-flex align-items-start gap-2 p-1 rounded border-bottom bg-white mb-1 small" style="cursor:pointer;">
+                <input class="form-check-input copy-lesson-chk mt-1" type="checkbox" name="lesson_ids" value="{{ l_obj.id }}"
+                       {% if not l_obj.already_copied %}checked{% endif %} onchange="syncCopyMasterCheckboxes()">
+                <span class="flex-grow-1">
+                  <b>หน่วยที่ {{ l_obj.unit_number }}:</b> {{ l_obj.title }}
+                  {% if l_obj.already_copied %}<span class="badge bg-secondary ms-1">คัดลอกแล้ว</span>{% endif %}
+                </span>
+              </label>
+              {% empty %}
+              <div class="text-muted small py-3 text-center">ไม่พบบทเรียนในปี {{ copy_source_year }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <!-- กิจกรรม -->
+        <div class="col-lg-6">
+          <div class="border rounded-3 p-3 h-100 bg-light">
+            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+              <span class="fw-bold text-success"><i class="bi bi-card-checklist me-1"></i>กิจกรรม/ใบงานจากปี {{ copy_source_year }} ({{ source_activities|length }})</span>
+              <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" id="chkAllActivities" checked
+                       onchange="toggleAllCopyGroup('.copy-activity-chk', this.checked)">
+                <label class="form-check-label small fw-bold" for="chkAllActivities">เลือกทั้งหมด</label>
+              </div>
+            </div>
+            <div style="max-height:240px;overflow-y:auto;">
+              {% for a_obj in source_activities %}
+              <label class="d-flex align-items-start gap-2 p-1 rounded border-bottom bg-white mb-1 small" style="cursor:pointer;">
+                <input class="form-check-input copy-activity-chk mt-1" type="checkbox" name="activity_ids" value="{{ a_obj.id }}"
+                       {% if not a_obj.already_copied %}checked{% endif %} onchange="syncCopyMasterCheckboxes()">
+                <span class="flex-grow-1">
+                  <b>{{ a_obj.title }}</b>
+                  <span class="text-muted">({{ a_obj.get_activity_type_display }} · {{ a_obj.max_score|floatformat:-1 }} คะแนน)</span>
+                  {% if a_obj.already_copied %}<span class="badge bg-secondary ms-1">คัดลอกแล้ว</span>{% endif %}
+                </span>
+              </label>
+              {% empty %}
+              <div class="text-muted small py-3 text-center">ไม่พบกิจกรรมในปี {{ copy_source_year }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div class="small text-muted">
+          <i class="bi bi-info-circle me-1"></i>ระบบคัดลอกเฉพาะโครงสร้างบทเรียน ใบงาน เฉลย (ตั้งซ่อนไว้) และเกณฑ์คะแนน โดยไม่นำผลงานส่งหรือคะแนนนักเรียนปีเก่าติดมาด้วย
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm fw-bold px-4">
+          <i class="bi bi-copy me-1"></i>ยืนยันคัดลอกรายการที่เลือกเข้าสู่ปี {{ current_academic_year }}
+        </button>
+      </div>
+    </form>
+
+    <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 mb-0 py-2">
+      <div class="small">
+        <i class="bi bi-people-fill me-1"></i>
+        <b>ขั้นตอนรายชื่อนักเรียนปี {{ current_academic_year }}:</b>
+        อัปโหลดไฟล์รายชื่อนักเรียนใหม่ (CSV / Excel) เพื่อให้นักเรียนเข้าสู่ระบบในปีนี้ (รหัสประจำตัวซ้ำกับปีเก่าได้)
+      </div>
+      <a href="{% url 'core:teacher_import_students' %}" class="btn btn-info btn-sm fw-bold text-dark">
+        <i class="bi bi-cloud-upload-fill me-1"></i>Upload รายชื่อนักเรียนปี {{ current_academic_year }}
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- 3. สรุปและลบข้อมูลแยกตามปีการศึกษา -->
+<div class="card shadow-sm mb-3">
+  <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-archive-fill text-warning me-2"></i>สรุปข้อมูลและไฟล์สะสมแยกตามปีการศึกษา (ลบได้เมื่อไหร่ก็ได้)</span>
+    <span class="badge bg-light text-dark">{{ year_summaries|length }} ปีการศึกษา</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>ปีการศึกษา</th>
+            <th class="text-center">นักเรียน / บทเรียน / กิจกรรม</th>
+            <th class="text-center">ไฟล์สะสม</th>
+            <th class="text-center">พื้นที่ไฟล์</th>
+            <th class="text-center">เช็คชื่อ / คะแนน / เกม</th>
+            <th class="text-end">จัดการ / ลบตามปีการศึกษา</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ys in year_summaries %}
+          <tr class="{% if ys.is_current %}table-primary{% endif %}">
+            <td>
+              <a href="?year={{ ys.year|urlencode }}" class="fw-bold text-decoration-none fs-6">{{ ys.year }}</a>
+              {% if ys.is_current %}
+                <span class="badge bg-primary ms-1">ปัจจุบัน</span>
+              {% endif %}
+              {% if ys.ay_record and ys.ay_record.copied_from_year %}
+                <div class="small text-muted" style="font-size:0.72rem;">ต่อจากปี {{ ys.ay_record.copied_from_year }}</div>
+              {% endif %}
+            </td>
+            <td class="text-center small">
+              <b>{{ ys.students_count }}</b> คน · <b>{{ ys.lessons_count }}</b> บท · <b>{{ ys.activities_count }}</b> กิจกรรม · <b>{{ ys.submissions_count }}</b> ส่งงาน
+            </td>
+            <td class="text-center">
+              <span class="badge bg-info text-dark">{{ ys.files_count }} ไฟล์</span>
+            </td>
+            <td class="text-center small fw-semibold">{{ ys.files_size_display }}</td>
+            <td class="text-center small text-muted">
+              เช็คชื่อ {{ ys.attendance_count }} · คะแนน {{ ys.score_logs_count }} · เกม {{ ys.sorting_count|add:ys.bingo_count|add:ys.lotto_count }}
+            </td>
+            <td class="text-end">
+              <a href="?year={{ ys.year|urlencode }}" class="btn btn-sm btn-outline-primary">ดูไฟล์ปีนี้</a>
+              <button type="button" class="btn btn-sm btn-outline-secondary fw-bold"
+                      onclick="openAdminDeleteModal('reset_year_games', '{{ ys.year|escapejs }}', '', 'ยืนยันรีเซ็ตเกมทั้งหมด (Sorting, Bingo, ID LOTTO) ของปีการศึกษา {{ ys.year|escapejs }}?')">
+                <i class="bi bi-controller me-1"></i>รีเซ็ตเกม
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold"
+                      onclick="openAdminDeleteModal('delete_year_files', '{{ ys.year|escapejs }}', '', 'ไฟล์สะสมการทำกิจกรรมทั้งหมดของปีการศึกษา {{ ys.year|escapejs }} ({{ ys.files_count }} ไฟล์, {{ ys.files_size_display }}) จะถูกลบออกจากระบบถาวร แต่ยังเก็บข้อมูลคะแนนและรายชื่อไว้')">
+                <i class="bi bi-file-earmark-x me-1"></i>ลบไฟล์ปีนี้
+              </button>
+              <button type="button" class="btn btn-sm btn-danger fw-bold"
+                      onclick="openAdminDeleteModal('delete_year_data', '{{ ys.year|escapejs }}', '', 'คำเตือนสำคัญ! คุณกำลังจะลบข้อมูลทั้งหมดของปีการศึกษา {{ ys.year|escapejs }} ทั้งบทเรียน ({{ ys.lessons_count }}), กิจกรรม ({{ ys.activities_count }}), ผลงานนักเรียน ({{ ys.submissions_count }}), ไฟล์ ({{ ys.files_count }} ไฟล์), คะแนน, เช็คชื่อ และเกม (รวมถึงรายชื่อนักเรียนในปีเก่า)')">
+                <i class="bi bi-trash-fill me-1"></i>ลบข้อมูลทั้งปี {{ ys.year }}
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 4. รายการไฟล์สะสมการทำกิจกรรม -->
+<div class="card shadow-sm">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+      <i class="bi bi-files text-primary me-2"></i>
+      <b>รายการไฟล์สะสมการทำกิจกรรม</b>
+      <span class="badge bg-secondary ms-1">{{ file_rows|length }} ไฟล์ ({{ total_listed_display }})</span>
+    </div>
+    <div class="d-flex flex-wrap gap-1 align-items-center">
+      <a href="{% url 'core:admin_data_files' %}" class="btn btn-sm {% if not selected_year %}btn-primary fw-bold{% else %}btn-outline-secondary{% endif %}">ทั้งหมด</a>
+      {% for y in years %}
+      <a href="?year={{ y|urlencode }}" class="btn btn-sm {% if selected_year == y %}btn-primary fw-bold{% else %}btn-outline-secondary{% endif %}">ปี {{ y }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height:480px;overflow-y:auto;">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>ปีการศึกษา</th>
+            <th>ประเภท</th>
+            <th>กิจกรรม / บทเรียน</th>
+            <th>เจ้าของ / ผู้อัปโหลด</th>
+            <th>ไฟล์ / แหล่งเก็บ</th>
+            <th class="text-center">ขนาด</th>
+            <th class="text-end">ลบไฟล์</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in file_rows %}
+          <tr>
+            <td><span class="badge bg-dark">{{ row.academic_year }}</span></td>
+            <td class="small">{{ row.category }}</td>
+            <td class="small fw-semibold">{{ row.activity_title }}</td>
+            <td class="small">{{ row.owner_label }}</td>
+            <td class="small">
+              {% if row.file_url %}
+                <a href="{{ row.file_url }}" target="_blank" class="text-decoration-none fw-semibold">
+                  <i class="bi bi-paperclip me-1"></i>{{ row.file_name }}
+                </a>
+              {% else %}
+                <span>{{ row.file_name }}</span>
+              {% endif %}
+              {% if row.gdrive_url %}
+                <div>
+                  <a href="{{ row.gdrive_url }}" target="_blank" class="badge bg-success-subtle text-success border border-success-subtle text-decoration-none mt-1">
+                    <i class="bi bi-cloud-check-fill me-1"></i>Google Drive
+                  </a>
+                </div>
+              {% endif %}
+            </td>
+            <td class="text-center small">{{ row.size_display }}</td>
+            <td class="text-end">
+              <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
+                      onclick="openAdminDeleteModal('delete_single_file', '{{ row.academic_year|escapejs }}', '{{ row.target|escapejs }}', 'ยืนยันลบไฟล์ &quot;{{ row.file_name|escapejs }}&quot; (ปีการศึกษา {{ row.academic_year|escapejs }}) ออกจากระบบ?')">
+                <i class="bi bi-trash"></i> ลบ
+              </button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">ไม่พบไฟล์สะสมการทำกิจกรรมในช่วงที่เลือก</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal แจ้งเตือนและใส่รหัสผ่าน Admin ล่าสุดก่อนดำเนินการลบ/รีเซ็ต -->
+<div class="modal fade" id="adminDeleteConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" class="modal-content border-danger border-2">
+      {% csrf_token %}
+      <input type="hidden" name="action" id="modalDeleteAction" value="">
+      <input type="hidden" name="target_year" id="modalTargetYear" value="">
+      <input type="hidden" name="file_target" id="modalFileTarget" value="">
+      <input type="hidden" name="filter_year" value="{{ selected_year }}">
+      <div class="modal-header bg-danger text-white">
+        <h6 class="modal-title fw-bold"><i class="bi bi-exclamation-octagon-fill me-2"></i>ยืนยันด้วยรหัสผ่าน Admin ล่าสุด</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger small fw-semibold mb-3" id="modalDeleteWarningText">
+          คำเตือน: การดำเนินการนี้ไม่สามารถกู้คืนได้
+        </div>
+        <div class="form-check mb-3 d-none" id="modalConfirmYearCheckWrap">
+          <input class="form-check-input border-danger" type="checkbox" name="confirm_delete_year" value="1" id="modalConfirmYearChk">
+          <label class="form-check-label small fw-bold text-danger" for="modalConfirmYearChk">
+            ฉันรับทราบคำเตือนและยืนยันการลบข้อมูลทั้งหมดของปีการศึกษานี้ถาวร
+          </label>
+        </div>
+        <label class="form-label small fw-bold text-dark">รหัสผ่าน Admin ล่าสุด <span class="text-danger">*</span></label>
+        <input type="password" name="admin_password" id="modalAdminPasswordInput" class="form-control fw-bold" required placeholder="กรอกรหัสผ่านล่าสุดของบัญชี {{ user.username }}">
+      </div>
+      <div class="modal-footer bg-light">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="submit" class="btn btn-danger btn-sm fw-bold" id="modalConfirmSubmitBtn">
+          <i class="bi bi-check-circle-fill me-1"></i>ยืนยันดำเนินการ
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function openAdminDeleteModal(action, targetYear, fileTarget, warningMsg) {
+  document.getElementById('modalDeleteAction').value = action;
+  document.getElementById('modalTargetYear').value = targetYear || '';
+  document.getElementById('modalFileTarget').value = fileTarget || '';
+  document.getElementById('modalDeleteWarningText').innerText = warningMsg || 'คำเตือน: การดำเนินการนี้ไม่สามารถกู้คืนได้';
+  document.getElementById('modalAdminPasswordInput').value = '';
+
+  const chkWrap = document.getElementById('modalConfirmYearCheckWrap');
+  const chkInput = document.getElementById('modalConfirmYearChk');
+  if (action === 'delete_year_data') {
+    chkWrap.classList.remove('d-none');
+    chkInput.required = true;
+    chkInput.checked = false;
+  } else {
+    chkWrap.classList.add('d-none');
+    chkInput.required = false;
+    chkInput.checked = false;
+  }
+  const modal = new bootstrap.Modal(document.getElementById('adminDeleteConfirmModal'));
+  modal.show();
+}
+
+function toggleAllCopyGroup(selector, checked) {
+  document.querySelectorAll(selector).forEach(el => {
+    el.checked = !!checked;
+  });
+}
+
+function syncCopyMasterCheckboxes() {
+  const les = Array.from(document.querySelectorAll('.copy-lesson-chk'));
+  const mLes = document.getElementById('chkAllLessons');
+  if (mLes && les.length) {
+    mLes.checked = les.every(el => el.checked);
+  }
+  const acts = Array.from(document.querySelectorAll('.copy-activity-chk'));
+  const mActs = document.getElementById('chkAllActivities');
+  if (mActs && acts.length) {
+    mActs.checked = acts.every(el => el.checked);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', syncCopyMasterCheckboxes);
+</script>
+{% endblock %}

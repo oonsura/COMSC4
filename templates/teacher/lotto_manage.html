@@ -1,0 +1,430 @@
+{% extends 'base.html' %}
+{% block title %}สุ่ม ID LOTTO - COMSC4{% endblock %}
+{% block page_header %}ระบบสุ่มนักเรียน ID LOTTO{% endblock %}
+{% block extra_css %}
+<style>
+  .slot-machine-box {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+    border: 5px solid #eab308;
+    border-radius: 20px;
+    padding: 1.5rem;
+    color: #fff;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.35);
+  }
+  .slot-digit {
+    width: 68px; height: 92px;
+    border-radius: 12px;
+    background: #fff;
+    color: #0f172a;
+    font-size: 3.1rem;
+    font-weight: 900;
+    font-family: 'Consolas', monospace;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 3px solid #facc15;
+    box-shadow: inset 0 3px 8px rgba(0,0,0,0.2);
+  }
+</style>
+{% endblock %}
+{% block content %}
+<audio id="lottoSlotAudio" src="/static/lotto/slot.mp3" preload="auto"></audio>
+<audio id="lottoPrizeAudio" src="/static/lotto/prize01.mp3" preload="auto"></audio>
+
+<div class="row g-3">
+  <!-- ฝั่งซ้าย: ตั้งค่ารอบการสุ่ม ID LOTTO -->
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-sliders text-warning me-2"></i>ตั้งค่ารอบการสุ่ม ID LOTTO</span>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="toggle_main_menu">
+          <button type="submit" class="btn btn-sm {% if site_setting.lotto_menu_open %}btn-success{% else %}btn-secondary{% endif %}">
+            เมนูนักเรียน: {% if site_setting.lotto_menu_open %}เปิด{% else %}ปิด{% endif %}
+          </button>
+        </form>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_session">
+          <div class="mb-2">
+            <label class="form-label small fw-bold">ชื่อรอบการสุ่ม</label>
+            <input type="text" name="title" class="form-control form-control-sm" value="ID LOTTO" required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold">เลือกห้องเรียน</label>
+              <select name="classroom_id" class="form-select form-select-sm">
+                <option value="">สุ่มรวมทุกห้อง</option>
+                {% for c in classrooms %}
+                <option value="{{ c.id }}" {% if current_session and current_session.classroom_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">กรองเฉพาะกลุ่ม</label>
+              <input type="text" name="group_filter" class="form-control form-control-sm" placeholder="ทุกกลุ่ม">
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold">จำนวนผู้โชคดี</label>
+              <input type="number" name="winner_count" class="form-control form-control-sm" value="5" min="1" max="50">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">คะแนนบวก</label>
+              <input type="number" step="0.5" name="bonus_points" class="form-control form-control-sm" value="1.0">
+            </div>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="only_never_picked" value="1" id="neverPickedChk" checked>
+            <label class="form-check-label small fw-bold" for="neverPickedChk">สุ่มเฉพาะคนที่ยังไม่เคยถูกสุ่มในคาบนี้</label>
+          </div>
+          <button type="submit" class="btn btn-warning w-100 fw-bold">สร้างรอบการสุ่มใหม่</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="bi bi-clock-history text-primary me-2"></i>ประวัติรอบการสุ่มย้อนหลัง</div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for s in sessions %}
+          <li class="list-group-item d-flex justify-content-between align-items-center {% if current_session and s.id == current_session.id %}bg-warning-subtle{% endif %}">
+            <a href="?session_id={{ s.id }}" class="text-decoration-none text-dark flex-grow-1">
+              <div class="fw-bold small">{{ s.title }}</div>
+              <div class="text-muted" style="font-size:0.74rem;">
+                {% if s.classroom %}{{ s.classroom.name }}{% else %}ทุกห้อง{% endif %}
+                {% if s.group_filter %}· {{ s.group_filter }}{% endif %}
+                · {{ s.created_at|date:"d/m H:i" }}
+              </div>
+            </a>
+            <span class="badge bg-dark">{{ s.results.count }} คน</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ฝั่งขวา: หน้าปัดสล็อต 5 หลัก + ตัวกรอง + ตารางผู้ถูกสุ่ม -->
+  <div class="col-lg-8">
+    {% if current_session %}
+    <div class="slot-machine-box text-center mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="badge bg-warning text-dark fw-bold">ID LOTTO 5-DIGIT STUDENT ID</span>
+        <span class="small text-warning">นักเรียนในเกณฑ์คงเหลือ: <b id="remainingCandCount">{{ candidate_count }}</b> คน</span>
+      </div>
+      <h4 class="fw-bold text-warning mb-3">{{ current_session.title }}</h4>
+
+      <!-- หน้าปัดสล็อต 5 หลัก -->
+      <div class="d-flex justify-content-center gap-2 mb-3">
+        <div class="slot-digit" id="digit_0">0</div>
+        <div class="slot-digit" id="digit_1">0</div>
+        <div class="slot-digit" id="digit_2">0</div>
+        <div class="slot-digit" id="digit_3">0</div>
+        <div class="slot-digit" id="digit_4">0</div>
+      </div>
+
+      <!-- การ์ดแสดงผู้โชคดีที่เพิ่งสุ่มได้ -->
+      <div id="winnerRevealCard" class="bg-white text-dark rounded-4 p-3 mx-auto mb-3 d-none shadow" style="max-width:520px;">
+        <div class="d-flex align-items-center gap-3 text-start">
+          <div id="winnerAvatarBox"></div>
+          <div class="flex-grow-1">
+            <span class="badge bg-success mb-1" id="winnerPointBadge">+1 คะแนนบวกอัตโนมัติ</span>
+            <h5 class="fw-bold mb-0" id="winnerNameText">-</h5>
+            <div class="text-primary fw-bold" id="winnerMetaText">-</div>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" id="btnSpinLotto" class="btn btn-warning btn-lg px-5 fw-bold shadow" onclick="spinDebsirinLotto()">
+        <i class="bi bi-dice-6-fill me-2"></i>หมุนสุ่มเลขประจำตัวนักเรียน
+      </button>
+    </div>
+
+    <!-- ตัวกรองการสุ่ม ID LOTTO -->
+    <div class="card mb-3 border-start border-4 border-primary">
+      <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-bold small text-primary"><i class="bi bi-funnel-fill me-1"></i>ตัวกรองการสุ่ม ID LOTTO</span>
+        <span class="badge bg-dark">เข้าเกณฑ์ <span id="filterPreviewCount">{{ candidate_count }}</span> คน</span>
+      </div>
+      <div class="card-body py-2">
+        <form method="post" id="lottoFilterForm">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_filters">
+          <input type="hidden" name="session_id" value="{{ current_session.id }}">
+          <div class="row g-2 align-items-center small">
+            <div class="col-md-6">
+              <div class="form-check mb-1">
+                <input class="form-check-input lotto-filter-ctrl" type="checkbox" name="filter_submitted_activity" value="1"
+                       id="chkLottoSubmitted" {% if current_session.filter_submitted_activity %}checked{% endif %}>
+                <label class="form-check-label fw-bold" for="chkLottoSubmitted">เฉพาะคนที่ส่งงานกิจกรรม</label>
+              </div>
+              <div class="form-check mb-0">
+                <input class="form-check-input lotto-filter-ctrl" type="checkbox" name="filter_presented_activity" value="1"
+                       id="chkLottoPresented" {% if current_session.filter_presented_activity %}checked{% endif %}>
+                <label class="form-check-label fw-bold" for="chkLottoPresented">เฉพาะคนที่ได้นำเสนอกิจกรรม</label>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-bold mb-1">ระบุกิจกรรมอ้างอิง</label>
+              <select name="filter_activity_id" id="lottoFilterActivitySelect" class="form-select form-select-sm lotto-filter-ctrl">
+                <option value="">ทุกกิจกรรม</option>
+                {% for act in activities %}
+                <option value="{{ act.id }}" {% if current_session.filter_activity_id == act.id %}selected{% endif %}>{{ act.title }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <div class="d-flex align-items-center gap-2">
+                <div class="form-check mb-0">
+                  <input class="form-check-input lotto-filter-ctrl" type="checkbox" name="filter_exclude_last_x" value="1"
+                         id="chkLottoExcludeLastX" {% if current_session.filter_exclude_last_x %}checked{% endif %}>
+                  <label class="form-check-label fw-bold" for="chkLottoExcludeLastX">เฉพาะคนที่ไม่ได้เป็น</label>
+                </div>
+                <input type="number" name="filter_last_x_count" id="lottoLastXCountInput" min="1" max="50"
+                       class="form-control form-control-sm text-center fw-bold lotto-filter-ctrl" style="width:58px;"
+                       value="{{ current_session.filter_last_x_count|default:5 }}">
+                <span class="fw-bold">คนสุดท้าย</span>
+              </div>
+            </div>
+            <div class="col-md-6 d-flex align-items-center gap-2">
+              <div class="form-check mb-0">
+                <input class="form-check-input lotto-filter-ctrl" type="checkbox" name="filter_material_checked" value="1"
+                       id="chkLottoMaterialChecked" {% if current_session.filter_material_checked %}checked{% endif %}>
+                <label class="form-check-label fw-bold" for="chkLottoMaterialChecked">เฉพาะคนที่ตรวจสอบแล้ว</label>
+              </div>
+              <input type="date" name="filter_check_date" id="lottoFilterDateInput"
+                     class="form-control form-control-sm lotto-filter-ctrl" style="width:auto;"
+                     value="{% if current_session.filter_check_date %}{{ current_session.filter_check_date|date:'Y-m-d' }}{% else %}{{ today_str }}{% endif %}">
+              <button type="submit" class="btn btn-sm btn-primary fw-bold ms-auto">บันทึกตัวกรอง</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- รายชื่อผู้ที่ถูกสุ่มในรอบนี้ + ปุ่มสรุปเพื่อให้คะแนน -->
+    <div class="card mb-3">
+      <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span><i class="bi bi-award-fill text-success me-2"></i>รายชื่อผู้โชคดีที่ถูกสุ่มในรอบนี้</span>
+        <form method="post" class="m-0" onsubmit="return confirm('ยืนยันสรุปเพื่อให้คะแนนนักเรียนที่สุ่มได้ทั้งหมด?')">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="finalize_scores">
+          <input type="hidden" name="session_id" value="{{ current_session.id }}">
+          <button type="submit" id="btnFinalizeLotto" class="btn btn-sm btn-success fw-bold {% if pending_count == 0 %}disabled{% endif %}">
+            <i class="bi bi-check2-circle me-1"></i>สรุปเพื่อให้คะแนน (<span id="pendingAwardCount">{{ pending_count }}</span> คน · +{{ effective_bonus_points|floatformat:1 }})
+          </button>
+        </form>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>ลำดับ</th><th>รูปประจำตัว</th><th>เลขประจำตัว</th><th>ชื่อ - นามสกุล</th><th>ชั้น/ห้อง</th><th>สถานะคะแนน</th><th class="text-end">ลบออก</th></tr>
+            </thead>
+            <tbody id="lottoResultsTableBody">
+              {% for r in results %}
+              <tr id="lottoRow_{{ r.id }}">
+                <td class="fw-bold">#{{ r.order_index }}</td>
+                <td>
+                  {% if r.student.avatar_url %}
+                    <img src="{{ r.student.avatar_url }}" class="avatar-circle" style="width:40px;height:40px;">
+                  {% else %}
+                    <span class="avatar-circle" style="width:40px;height:40px;">{{ r.student.avatar_initial }}</span>
+                  {% endif %}
+                </td>
+                <td class="fw-bold font-monospace fs-5 text-success">{{ r.student.student_id }}</td>
+                <td class="fw-semibold">{{ r.student.get_full_name }}</td>
+                <td class="small">{{ r.student.room_display }} เลขที่ {{ r.student.class_number }}</td>
+                <td>
+                  {% if r.is_awarded %}
+                    <span class="badge bg-success">+{{ r.points_awarded|floatformat:1 }} ให้คะแนนแล้ว</span>
+                  {% else %}
+                    <span class="badge bg-warning text-dark">รอสรุป (+{{ effective_bonus_points|floatformat:1 }})</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeLottoWinner({{ r.id }}, '{{ r.student.get_full_name|escapejs }}')">
+                    <i class="bi bi-person-x-fill me-1"></i>ลบออก &amp; ระบุเหตุผล
+                  </button>
+                </td>
+              </tr>
+              {% empty %}
+              <tr id="emptyLottoRow"><td colspan="7" class="text-center text-muted py-4">กดปุ่ม RANDOM ด้านบนเพื่อเริ่มสุ่มนักเรียน</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {% if removed_results %}
+    <div class="card">
+      <div class="card-header bg-light text-secondary small">
+        <i class="bi bi-journal-x me-1"></i>ประวัติรายชื่อที่ถูกลบออกจากรายการสุ่มพร้อมเหตุผล
+      </div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush small">
+          {% for rm in removed_results %}
+          <li class="list-group-item d-flex justify-content-between text-muted">
+            <span><s>{{ rm.student.student_id }} {{ rm.student.get_full_name }}</s> ({{ rm.student.room_display }})</span>
+            <span class="text-danger">เหตุผลที่ลบ: {{ rm.removed_reason }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{% if current_session %}
+<script>
+const LOTTO_SESSION_ID = {{ current_session.id }};
+const CSRF_TOKEN = '{{ csrf_token }}';
+
+function spinDebsirinLotto() {
+  const btn = document.getElementById('btnSpinLotto');
+  btn.disabled = true;
+  const slotAudio = document.getElementById('lottoSlotAudio');
+  const prizeAudio = document.getElementById('lottoPrizeAudio');
+  try { slotAudio.currentTime = 0; slotAudio.play(); } catch (e) {}
+
+  // เอฟเฟกต์หมุนตัวเลข 5 หลักก่อนหยุดทีละหลัก
+  const spinIntervals = [];
+  for (let i = 0; i < 5; i++) {
+    const el = document.getElementById('digit_' + i);
+    spinIntervals.push(setInterval(() => {
+      el.innerText = Math.floor(Math.random() * 10);
+    }, 55));
+  }
+
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  appendLottoFilterParams(fd);
+
+  fetch(`/api/lotto/${LOTTO_SESSION_ID}/draw/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        spinIntervals.forEach(clearInterval);
+        btn.disabled = false;
+        alert(data.error);
+        return;
+      }
+
+      const targetDigits = data.student_id.padStart(5, '0').split('');
+      targetDigits.forEach((d, idx) => {
+        setTimeout(() => {
+          clearInterval(spinIntervals[idx]);
+          document.getElementById('digit_' + idx).innerText = d;
+          if (idx === 4) {
+            try { slotAudio.pause(); prizeAudio.currentTime = 0; prizeAudio.play(); } catch (e) {}
+            revealLottoWinner(data);
+            btn.disabled = false;
+          }
+        }, 350 + idx * 220);
+      });
+    });
+}
+
+function appendLottoFilterParams(target) {
+  target.append('filters_present', '1');
+  if (document.getElementById('chkLottoSubmitted')?.checked) target.append('filter_submitted_activity', '1');
+  if (document.getElementById('chkLottoExcludeLastX')?.checked) target.append('filter_exclude_last_x', '1');
+  if (document.getElementById('chkLottoMaterialChecked')?.checked) target.append('filter_material_checked', '1');
+  if (document.getElementById('chkLottoPresented')?.checked) target.append('filter_presented_activity', '1');
+  target.append('filter_activity_id', document.getElementById('lottoFilterActivitySelect')?.value || '');
+  target.append('filter_last_x_count', document.getElementById('lottoLastXCountInput')?.value || '5');
+  target.append('filter_check_date', document.getElementById('lottoFilterDateInput')?.value || '');
+}
+
+function refreshLottoCandidates() {
+  const qs = new URLSearchParams();
+  appendLottoFilterParams(qs);
+  fetch(`/api/lotto/${LOTTO_SESSION_ID}/state/?${qs.toString()}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok || typeof data.candidate_count === 'undefined') return;
+      const rcEl = document.getElementById('remainingCandCount');
+      const pcEl = document.getElementById('filterPreviewCount');
+      if (rcEl) rcEl.innerText = data.candidate_count;
+      if (pcEl) pcEl.innerText = data.candidate_count;
+    });
+}
+
+document.querySelectorAll('.lotto-filter-ctrl').forEach(el => {
+  el.addEventListener('change', refreshLottoCandidates);
+});
+
+function revealLottoWinner(data) {
+  document.getElementById('remainingCandCount').innerText = data.remaining_candidates;
+  const pcEl = document.getElementById('filterPreviewCount');
+  if (pcEl) pcEl.innerText = data.remaining_candidates;
+  const card = document.getElementById('winnerRevealCard');
+  card.classList.remove('d-none');
+  document.getElementById('winnerAvatarBox').innerHTML = data.avatar_url
+    ? `<img src="${data.avatar_url}" class="avatar-circle avatar-lg">`
+    : `<div class="avatar-circle avatar-lg">${data.avatar_initial}</div>`;
+  document.getElementById('winnerNameText').innerText = `${data.student_id} — ${data.full_name}`;
+  document.getElementById('winnerMetaText').innerText = `${data.room_display} เลขที่ ${data.class_number} (${data.group_name})`;
+  document.getElementById('winnerPointBadge').innerText = `ลำดับที่ #${data.order_index} · รอสรุปให้คะแนน (+${data.pending_points} คะแนน)`;
+
+  const pendingEl = document.getElementById('pendingAwardCount');
+  const finBtn = document.getElementById('btnFinalizeLotto');
+  if (pendingEl && data.pending_count !== undefined) pendingEl.innerText = data.pending_count;
+  if (finBtn && data.pending_count !== undefined) finBtn.classList.toggle('disabled', data.pending_count === 0);
+
+  const emptyRow = document.getElementById('emptyLottoRow');
+  if (emptyRow) emptyRow.remove();
+
+  const tbody = document.getElementById('lottoResultsTableBody');
+  const tr = document.createElement('tr');
+  tr.id = `lottoRow_${data.result_id}`;
+  tr.className = 'table-warning';
+  tr.innerHTML = `
+    <td class="fw-bold">#${data.order_index}</td>
+    <td>${data.avatar_url ? `<img src="${data.avatar_url}" class="avatar-circle" style="width:40px;height:40px;">` : `<span class="avatar-circle" style="width:40px;height:40px;">${data.avatar_initial}</span>`}</td>
+    <td class="fw-bold font-monospace fs-5 text-success">${data.student_id}</td>
+    <td class="fw-semibold">${data.full_name}</td>
+    <td class="small">${data.room_display} เลขที่ ${data.class_number}</td>
+    <td><span class="badge bg-warning text-dark">รอสรุป (+${Number(data.pending_points).toFixed(1)})</span></td>
+    <td class="text-end">
+      <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeLottoWinner(${data.result_id}, '${data.full_name}')">
+        <i class="bi bi-person-x-fill me-1"></i>ลบออก & ระบุเหตุผล
+      </button>
+    </td>
+  `;
+  tbody.prepend(tr);
+}
+
+function removeLottoWinner(resultId, studentName) {
+  const reason = prompt(`ระบุเหตุผลที่ลบ "${studentName}" ออกจากรายการสุ่ม:`, 'ไม่อยู่ในห้องเรียน');
+  if (reason === null) return;
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('result_id', resultId);
+  fd.append('reason', reason);
+
+  fetch(`/api/lotto/${LOTTO_SESSION_ID}/remove-result/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        const row = document.getElementById('lottoRow_' + resultId);
+        if (row) row.remove();
+        const pendingEl = document.getElementById('pendingAwardCount');
+        const finBtn = document.getElementById('btnFinalizeLotto');
+        if (pendingEl && data.pending_count !== undefined) pendingEl.innerText = data.pending_count;
+        if (finBtn && data.pending_count !== undefined) finBtn.classList.toggle('disabled', data.pending_count === 0);
+      }
+    });
+}
+</script>
+{% endif %}
+{% endblock %}

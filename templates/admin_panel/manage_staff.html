@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block title %}ตั้งค่าระบบ · จัดการ Admin / ผู้ดูแล - COMSC4{% endblock %}
+{% block page_header %}ตั้งค่าระบบ · จัดการบัญชี Admin และผู้ดูแล/ครูผู้สอน{% endblock %}
+{% block content %}
+{% include 'admin_panel/_settings_nav.html' %}
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header bg-primary text-white">
+        <i class="bi bi-person-plus-fill me-2"></i>เพิ่มผู้ดูแลหรือ Admin คนอื่น (A.2)
+      </div>
+      <div class="card-body">
+        <p class="small text-muted">
+          สามารถระบุเป็น <b>อีเมลโรงเรียน @{{ site_setting.allowed_oauth_domain }}</b> หรือ <b>username/password</b><br>
+          กรณีเพิ่มด้วยอีเมลโรงเรียน ผู้ใช้สามารถล็อกอินผ่าน Google OAuth ได้ในภายหลังทันที
+        </p>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_staff">
+          <div class="mb-2">
+            <label class="form-label small fw-bold">ระดับสิทธิ์ (Role)</label>
+            <select name="role" class="form-select form-select-sm">
+              <option value="teacher">ผู้ดูแล / ครูผู้สอน (Teacher)</option>
+              <option value="admin">Admin (ผู้ดูแลระบบสูงสุด)</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">อีเมลโรงเรียน (@{{ site_setting.allowed_oauth_domain }})</label>
+            <input type="email" name="email" class="form-control form-control-sm" placeholder="เช่น teacher01@{{ site_setting.allowed_oauth_domain }}">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold">Username</label>
+              <input type="text" name="username" class="form-control form-control-sm" placeholder="เว้นว่าง=ใช้ชื่อหน้าอีเมล">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">รหัสผ่านเริ่มต้น</label>
+              <input type="text" name="password" class="form-control form-control-sm" value="1234">
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold">ชื่อ</label>
+              <input type="text" name="first_name" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">นามสกุล</label>
+              <input type="text" name="last_name" class="form-control form-control-sm">
+            </div>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="allow_google_oauth" value="1" id="oauthStaffChk" checked>
+            <label class="form-check-label small fw-bold text-success" for="oauthStaffChk">
+              อนุญาตให้ล็อกอินด้วย Google OAuth ผ่านอีเมลโรงเรียนได้
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 fw-bold">บันทึกบัญชีผู้ดูแล</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-shield-check text-primary me-2"></i>รายชื่อ Admin และผู้ดูแล/ครูผู้สอนทั้งหมด</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>Username</th><th>ชื่อ - นามสกุล</th><th>อีเมลโรงเรียน</th><th>บทบาท</th><th>Google OAuth</th><th class="text-end">จัดการ</th></tr>
+            </thead>
+            <tbody>
+              {% for u in staff_users %}
+              <tr>
+                <td class="fw-bold">{{ u.username }}</td>
+                <td>{{ u.get_full_name }}</td>
+                <td><code>{{ u.email|default:"-" }}</code></td>
+                <td>
+                  {% if u.role == 'admin' %}
+                    <span class="badge bg-danger">Admin</span>
+                  {% else %}
+                    <span class="badge bg-info text-dark">ผู้ดูแล/ครู</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if u.allow_google_oauth and u.email %}
+                    <span class="badge bg-success"><i class="bi bi-google me-1"></i>รองรับ OAuth</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Password เท่านั้น</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if u.id != user.id %}
+                  <form method="post" class="d-inline" onsubmit="return confirm('ยืนยันลบบัญชีนี้?')">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete_staff">
+                    <input type="hidden" name="user_id" value="{{ u.id }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% load comsc4_tags %}
+{% block title %}บทเรียน - COMSC4{% endblock %}
+{% block page_header %}บทเรียนและแบบสอบถามท้ายบท{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div class="d-flex flex-wrap gap-2">
+    <a href="{% url 'core:student_lessons' %}?lesson_id=all" class="btn btn-sm {% if not selected_lesson_id %}btn-primary fw-bold{% else %}btn-outline-primary{% endif %}">
+      <i class="bi bi-collection me-1"></i>บทเรียนทั้งหมด ({{ lessons|length }})
+    </a>
+    {% for l in lessons %}
+    <a href="?lesson_id={{ l.id }}" class="btn btn-sm {% if selected_lesson_id == l.id %}btn-success fw-bold{% else %}btn-outline-secondary{% endif %}">
+      หน่วยที่ {{ l.unit_number }}: {{ l.title|truncatechars:26 }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% for lesson in lessons %}
+<div class="card mb-4 shadow-sm {% if selected_lesson_id == lesson.id %}border border-2 border-primary{% endif %}">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 bg-light">
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge bg-primary">หน่วยที่ {{ lesson.unit_number }}</span>
+      <h5 class="fw-bold mb-0">{{ lesson.title }}</h5>
+    </div>
+    <span class="small text-muted">{{ lesson.created_at|date:"d/m/Y" }}</span>
+  </div>
+  <div class="card-body">
+    {% if lesson.summary %}
+      <p class="text-secondary small mb-2">{{ lesson.summary }}</p>
+    {% endif %}
+    <div class="bg-light p-3 rounded border mb-3">{{ lesson.content_html|safe }}</div>
+
+    <!-- แบบสอบถาม / แบบทดสอบของบทเรียนนี้ -->
+    <div class="border-top pt-3">
+      <h6 class="fw-bold text-success mb-2">
+        <i class="bi bi-ui-checks-grid me-1"></i>แบบสอบถาม / แบบทดสอบประจำบทเรียน ({{ lesson.active_quizzes|length }} ชุด)
+      </h6>
+      {% if lesson.active_quizzes %}
+        <div class="row g-2">
+          {% for qz in lesson.active_quizzes %}
+          {% with att=my_attempts|get_item:qz.id %}
+          <div class="col-md-6">
+            <div class="border rounded-3 p-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 h-100">
+              <div>
+                <div class="fw-bold">{{ qz.title }}</div>
+                <div class="small text-muted">
+                  <i class="bi bi-cpu me-1"></i>{{ qz.ai_engine_used }} · {{ qz.questions.count }} ข้อ · {{ qz.time_limit_minutes }} นาที
+                </div>
+                {% if att %}
+                  <span class="badge bg-success mt-1">ทำแล้ว: {{ att.score }}/{{ att.max_score }} คะแนน</span>
+                {% else %}
+                  <span class="badge bg-warning text-dark mt-1">ยังไม่ได้ทำ</span>
+                {% endif %}
+              </div>
+              <a href="{% url 'core:student_take_quiz' qz.id %}" class="btn btn-sm btn-primary fw-bold">
+                <i class="bi bi-pencil-square me-1"></i>{% if att %}ทำซ้ำ{% else %}ทำแบบสอบถาม{% endif %}
+              </a>
+            </div>
+          </div>
+          {% endwith %}
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="text-muted small">ยังไม่มีแบบสอบถามในบทเรียนนี้</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% empty %}
+<div class="alert alert-info">ยังไม่มีบทเรียนในระบบ</div>
+{% endfor %}
+{% endblock %}

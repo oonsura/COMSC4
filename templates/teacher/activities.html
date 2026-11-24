@@ -1,0 +1,466 @@
+{% extends 'base.html' %}
+{% block title %}จัดการใบงาน / กิจกรรม & โครงสร้างคะแนนรายช่วง - COMSC4{% endblock %}
+{% block page_header %}จัดการใบงาน / กิจกรรม &amp; โครงสร้างคะแนนรายช่วง (รวมตรงไม่หาร vs เฉลี่ยสัดส่วน){% endblock %}
+{% block content %}
+<!-- แถบภาพรวมโครงสร้างคะแนนรายวิชา (ไม่มีรายชื่อนักเรียน/ไม่มีส่วนสุ่ม) -->
+<div class="card mb-3 border-start border-4 border-primary shadow-sm">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+      <div class="d-flex flex-wrap align-items-center gap-3">
+        <div class="px-3 py-2 rounded-3 bg-primary-subtle border border-primary-subtle">
+          <div class="small text-muted fw-semibold">จำนวนช่วงคะแนน</div>
+          <div class="fs-4 fw-bold text-primary">{{ period_structures|length }} ช่วง</div>
+        </div>
+        <div class="px-3 py-2 rounded-3 bg-success-subtle border border-success-subtle">
+          <div class="small text-muted fw-semibold">คะแนนเต็มรวมทุกช่วง</div>
+          <div class="fs-4 fw-bold text-success">{{ total_course_max_score|floatformat:1 }} คะแนน</div>
+        </div>
+        <div class="px-3 py-2 rounded-3 bg-warning-subtle border border-warning-subtle">
+          <div class="small text-muted fw-semibold">ใบงาน / กิจกรรมทั้งหมด</div>
+          <div class="fs-4 fw-bold text-dark">{{ total_activities_count }} รายการ</div>
+        </div>
+      </div>
+
+      <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-sm btn-outline-success fw-bold" data-bs-toggle="modal" data-bs-target="#createPeriodModal">
+          <i class="bi bi-plus-square me-1"></i>สร้างช่วงคะแนนใหม่
+        </button>
+        <a href="{% url 'core:teacher_activity_create' %}" class="btn btn-sm btn-primary fw-bold">
+          <i class="bi bi-plus-circle me-1"></i>สร้างใบงาน / กิจกรรมใหม่
+        </a>
+        <a href="{% url 'core:teacher_presentations' %}" class="btn btn-sm btn-warning fw-bold text-dark">
+          <i class="bi bi-display-fill me-1"></i>เปิดเมนู นำเสนอใบงาน
+        </a>
+        <a href="{% url 'core:teacher_submissions' %}" class="btn btn-sm btn-outline-dark fw-bold">
+          <i class="bi bi-clipboard-check me-1"></i>ตรวจสอบการส่งงาน
+        </a>
+        <form method="post" class="m-0">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="seed_room01_samples">
+          <button type="submit" class="btn btn-sm btn-outline-secondary fw-semibold">
+            <i class="bi bi-arrow-repeat me-1"></i>อัปเดตตัวอย่าง ม.4/1
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {% if period_structures %}
+    <div class="progress" style="height: 22px;">
+      {% for ps in period_structures %}
+      {% widthratio ps.target_max_score total_course_max_score 100 as p_pct %}
+      <div class="progress-bar {% if forloop.counter == 1 %}bg-primary{% elif forloop.counter == 2 %}bg-success{% elif forloop.counter == 3 %}bg-info text-dark{% else %}bg-warning text-dark{% endif %} fw-bold small"
+           style="width: {{ p_pct|default:0 }}%;" title="{{ ps.period.name }}: {{ ps.target_max_score|floatformat:1 }} คะแนน">
+        ช่วงที่ {{ ps.period.order_no }}: {{ ps.target_max_score|floatformat:0 }} คะแนน
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- รายละเอียดโครงสร้างคะแนนแต่ละช่วง -->
+{% for ps in period_structures %}
+{% with p=ps.period %}
+<div class="card mb-4 shadow-sm border-top border-4 {% if p.is_finalized %}border-danger{% else %}border-success{% endif %}">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 bg-light">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <span class="badge bg-dark">ช่วงที่ {{ p.order_no }}</span>
+      <h5 class="fw-bold mb-0">{{ p.name }}</h5>
+      {% if p.is_finalized %}
+        <span class="badge bg-danger"><i class="bi bi-lock-fill me-1"></i>สรุปคะแนนแล้ว (ล็อก)</span>
+      {% else %}
+        <span class="badge bg-success"><i class="bi bi-unlock-fill me-1"></i>กำลังเปิดใช้งาน</span>
+      {% endif %}
+      {% if ps.is_proportional %}
+        <span class="badge bg-info text-dark">รวมแบบเฉลี่ยสัดส่วน (÷ {{ ps.raw_activity_sum|floatformat:1 }} × {{ ps.target_max_score|floatformat:1 }})</span>
+      {% else %}
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">รวมแบบไม่เฉลี่ยสัดส่วน (+ กันตรงๆ ไม่หาร)</span>
+      {% endif %}
+    </div>
+    <a href="{% url 'core:teacher_scores' %}?period_id={{ p.id }}" class="btn btn-sm btn-outline-dark fw-semibold">
+      <i class="bi bi-sliders me-1"></i>จัดการบวก/ลบ &amp; สรุปช่วงนี้
+    </a>
+  </div>
+
+  <div class="card-body">
+    <!-- ฟอร์มกำหนดคะแนนช่วงนี้ และเลือกรูปแบบการรวมคะแนน (รวมตรง vs เฉลี่ยสัดส่วน) -->
+    <form method="post" class="border rounded-3 p-3 mb-3 bg-light">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="update_period_config">
+      <input type="hidden" name="target_period_id" value="{{ p.id }}">
+
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label small fw-bold mb-1">ชื่อช่วงคะแนน</label>
+          <input type="text" name="name" class="form-control form-control-sm fw-semibold" value="{{ p.name }}" {% if p.is_finalized %}disabled{% endif %} required>
+        </div>
+        <div class="col-md-1">
+          <label class="form-label small fw-bold mb-1">ลำดับ</label>
+          <input type="number" name="order_no" class="form-control form-control-sm text-center fw-bold" value="{{ p.order_no }}" min="1" {% if p.is_finalized %}disabled{% endif %} required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-bold mb-1 text-primary">คะแนนเต็มช่วงนี้</label>
+          <input type="number" step="0.5" min="1" name="max_score" class="form-control form-control-sm fw-bold border-primary text-center" value="{{ p.max_score|floatformat:1 }}" {% if p.is_finalized %}disabled{% endif %} required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-bold mb-1">วิธีรวมคะแนนกิจกรรมในช่วงนี้</label>
+          <div class="border rounded bg-white px-2 py-1">
+            <div class="form-check form-check-inline mb-0 small">
+              <input class="form-check-input" type="radio" name="score_calc_mode" id="calcDirect_{{ p.id }}" value="direct"
+                     {% if p.score_calc_mode != 'proportional' %}checked{% endif %} {% if p.is_finalized %}disabled{% endif %}>
+              <label class="form-check-label fw-bold text-primary" for="calcDirect_{{ p.id }}">
+                รวมตรงไม่หาร
+              </label>
+            </div>
+            <div class="form-check form-check-inline mb-0 small">
+              <input class="form-check-input" type="radio" name="score_calc_mode" id="calcProp_{{ p.id }}" value="proportional"
+                     {% if p.score_calc_mode == 'proportional' %}checked{% endif %} {% if p.is_finalized %}disabled{% endif %}>
+              <label class="form-check-label fw-bold text-info-emphasis" for="calcProp_{{ p.id }}">
+                รวมแบบเฉลี่ยสัดส่วน
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-sm btn-primary w-100 fw-bold" {% if p.is_finalized %}disabled{% endif %}>
+            <i class="bi bi-save me-1"></i>บันทึกโครงสร้าง
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <!-- กล่องสรุปโครงสร้างตัวเลขของช่วงคะแนน -->
+    <div class="alert {% if ps.is_proportional %}alert-info{% else %}alert-primary bg-primary-subtle border-primary-subtle{% endif %} py-2 px-3 small mb-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <b>โครงสร้างคะแนนในช่วง "{{ p.name }}":</b>
+          จำนวน <b>{{ ps.activities|length }}</b> กิจกรรม ·
+          ผลรวมคะแนนดิบกิจกรรมทั้งหมด = <b class="fs-6">{{ ps.raw_activity_sum|floatformat:1 }}</b> คะแนน ·
+          คะแนนเต็มที่ตั้งไว้ = <b class="fs-6">{{ ps.target_max_score|floatformat:1 }}</b> คะแนน
+        </div>
+        <span class="badge bg-dark">
+          {% if ps.is_proportional %}
+            คะแนนสุทธิเต็มจากกิจกรรม = {{ ps.effective_activity_max|floatformat:1 }} คะแนน
+          {% else %}
+            รวมตรง = {{ ps.effective_activity_max|floatformat:1 }} คะแนน + บวก/ลบ
+          {% endif %}
+        </span>
+      </div>
+      <div class="mt-1 text-dark">
+        {% if ps.is_proportional %}
+          <i class="bi bi-calculator me-1"></i>สูตรเฉลี่ยสัดส่วน: ระบบจะแปลงคะแนนดิบแต่ละกิจกรรมเทียบเป็นสัดส่วนเข้าสู่คะแนนเต็ม <b>{{ ps.target_max_score|floatformat:1 }}</b> คะแนน (คะแนนดิบที่ทำได้ ÷ {{ ps.raw_activity_sum|floatformat:1 }} × {{ ps.target_max_score|floatformat:1 }})
+        {% else %}
+          <i class="bi bi-plus-slash-minus me-1"></i>สูตรรวมตรง (ไม่หาร): นำคะแนนกิจกรรมทุกชิ้นในช่วงนี้มา <b>+ รวมกันตรงๆ โดยไม่หารหรือลดทอน</b> แล้วรวมกับคะแนนบวก/ลบในคาบ
+          {% if ps.diff_from_target != 0 %}
+            <span class="text-muted">(หมายเหตุ: ผลรวมคะแนนดิบ {{ ps.raw_activity_sum|floatformat:1 }} ต่างจากเพดานที่ตั้งไว้ {{ ps.target_max_score|floatformat:1 }} อยู่ {{ ps.diff_from_target|floatformat:1 }} คะแนน)</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ตารางรายการใบงาน / กิจกรรมในช่วงนี้ (แสดงโครงสร้างคะแนนอย่างเดียว) -->
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:45px;">#</th>
+            <th>ใบงาน / กิจกรรม &amp; คำชี้แจง</th>
+            <th class="text-center" style="width:130px;">รูปแบบ</th>
+            <th class="text-center" style="width:110px;">คะแนนดิบ</th>
+            <th class="text-center" style="width:190px;">น้ำหนักคะแนนในช่วงนี้</th>
+            <th class="text-center" style="width:95px;">สถานะ</th>
+            <th class="text-end" style="width:210px;">จัดการ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for act in ps.activities %}
+          <tr class="{% if not act.is_active %}opacity-50{% endif %}" {% if act.is_group_activity %}style="background-color:#fefce8;"{% endif %}>
+            <td class="fw-bold">{{ forloop.counter }}</td>
+            <td>
+              <div class="fw-bold small">
+                {{ act.title }}
+                {% if act.is_group_activity %}
+                  <span class="badge text-dark border border-warning ms-1" style="background:#fef08a;">
+                    <i class="bi bi-people-fill text-primary me-1"></i>
+                    {% if act.group_count %}แบ่ง {{ act.group_count }} กลุ่ม{% else %}กลุ่ม (สูงสุด {{ act.max_group_size }} คน){% endif %}
+                  </span>
+                {% endif %}
+                <span class="badge bg-light text-dark border ms-1"><i class="bi bi-building me-1"></i>{{ act.get_target_rooms_display }}</span>
+                {% if act.worksheet_pdf %}<span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1"><i class="bi bi-file-earmark-pdf-fill me-1"></i>PDF</span>{% endif %}
+                {% if act.answer_key_items.count %}<span class="badge bg-info text-dark ms-1">เฉลย {{ act.answer_key_items.count }} ข้อ</span>{% endif %}
+                {% if act.grading_tiers.count %}<span class="badge bg-warning text-dark ms-1">กำหนด {{ act.grading_tiers.count }} รอบตรวจ</span>{% endif %}
+              </div>
+              <div class="small text-muted">{{ act.description|default:"-" }}</div>
+            </td>
+            <td class="text-center">
+              <span class="badge {% if act.activity_type == 'qa' %}bg-primary{% elif act.activity_type == 'image' %}bg-success{% else %}bg-secondary{% endif %}">
+                {{ act.get_activity_type_display }}
+              </span>
+            </td>
+            <td class="text-center fw-bold">{{ act.max_score|floatformat:1 }}</td>
+            <td class="text-center">
+              {% if ps.is_proportional %}
+                <span class="badge bg-info text-dark fw-bold">{{ act.effective_max|floatformat:2 }} คะแนน</span>
+                <div class="text-muted" style="font-size:0.72rem;">({{ act.share_pct }}% ของช่วง)</div>
+              {% else %}
+                <span class="badge bg-primary fw-bold">{{ act.effective_max|floatformat:1 }} คะแนนเต็ม (ไม่หาร)</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <form method="post" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="toggle_activity_active">
+                <input type="hidden" name="target_activity_id" value="{{ act.id }}">
+                <button type="submit" class="btn btn-sm py-0 px-2 {% if act.is_active %}btn-success{% else %}btn-secondary{% endif %}">
+                  {% if act.is_active %}เปิดรับงาน{% else %}ปิด{% endif %}
+                </button>
+              </form>
+              {% if act.is_group_activity %}
+              <form method="post" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="toggle_group_selection">
+                <input type="hidden" name="target_activity_id" value="{{ act.id }}">
+                <button type="submit" class="btn btn-sm py-0 px-2 {% if act.group_selection_open %}btn-outline-primary{% else %}btn-outline-danger{% endif %}" title="คลิกเพื่อเปิด/ปิดให้เด็กย้ายกลุ่ม">
+                  {% if act.group_selection_open %}เปิดจับกลุ่ม{% else %}ปิดจับกลุ่ม{% endif %}
+                </button>
+              </form>
+              {% endif %}
+            </td>
+            <td class="text-end text-nowrap">
+              <a href="{% url 'core:teacher_activity_edit' act.id %}" class="btn btn-sm btn-outline-primary py-0 px-2 {% if p.is_finalized %}disabled{% endif %}">
+                <i class="bi bi-pencil-square me-1"></i>แก้ไข / เฉลย / เกณฑ์
+              </a>
+              <a href="{% url 'core:teacher_presentations' %}?activity_id={{ act.id }}" class="btn btn-sm btn-outline-warning text-dark py-0 px-2" title="ไปหน้าสุ่มนำเสนอผลงานกิจกรรมนี้">
+                <i class="bi bi-display"></i>
+              </a>
+              {% if not p.is_finalized %}
+              <form method="post" class="d-inline" onsubmit="return confirm('ยืนยันลบกิจกรรม \"{{ act.title|escapejs }}\"?')">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_activity">
+                <input type="hidden" name="target_activity_id" value="{{ act.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-3 small">ยังไม่มีใบงาน / กิจกรรมในช่วงคะแนนนี้ — กด "สร้างใบงาน / กิจกรรมใหม่" เพื่อเพิ่มลงในช่วงนี้ได้ทันที</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endwith %}
+{% endfor %}
+
+{% if unassigned_activities %}
+<div class="card mb-3 border-warning shadow-sm">
+  <div class="card-header bg-warning-subtle fw-bold small">
+    <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>ใบงาน / กิจกรรมที่ยังไม่ได้จัดลงช่วงคะแนน ({{ unassigned_activities|length }} รายการ)
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0 align-middle">
+      <tbody>
+        {% for act in unassigned_activities %}
+        <tr>
+          <td class="ps-3"><b>{{ act.title }}</b> <span class="badge bg-secondary ms-1">{{ act.max_score|floatformat:1 }} คะแนน</span></td>
+          <td class="text-end pe-3">
+            <form method="post" class="d-inline-flex gap-1 align-items-center">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="update_activity_period">
+              <input type="hidden" name="target_activity_id" value="{{ act.id }}">
+              <select name="score_period_id" class="form-select form-select-sm" style="width:auto;">
+                {% for p in open_periods %}
+                <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-primary fw-bold">จัดลงช่วงคะแนน</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Modal สร้างช่วงคะแนนใหม่ -->
+<div class="modal fade" id="createPeriodModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_period">
+        <div class="modal-header bg-success text-white py-2">
+          <h6 class="modal-title fw-bold"><i class="bi bi-plus-square me-1"></i>สร้างช่วงคะแนนใหม่</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label small fw-bold">ชื่อช่วงคะแนน</label>
+            <input type="text" name="name" class="form-control form-control-sm" placeholder="เช่น ช่วงคะแนนที่ 3 (ปลายภาค)" required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold">ลำดับช่วงที่</label>
+              <input type="number" name="order_no" class="form-control form-control-sm" value="{{ all_periods|length|add:'1' }}" min="1" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">คะแนนเต็มช่วงนี้</label>
+              <input type="number" step="0.5" min="1" name="max_score" class="form-control form-control-sm" value="20" required>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">วิธีรวมคะแนนกิจกรรม</label>
+            <select name="score_calc_mode" class="form-select form-select-sm">
+              {% for val, lbl in calc_mode_choices %}
+              <option value="{{ val }}" {% if val == 'direct' %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label small fw-bold">หมายเหตุ</label>
+            <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น รวมกิจกรรมท้ายบทและคะแนนความประพฤติ">
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="submit" class="btn btn-sm btn-success fw-bold">สร้างช่วงคะแนน</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal สร้างใบงาน / กิจกรรมใหม่ -->
+<div class="modal fade" id="createActivityModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_activity">
+        <div class="modal-header bg-primary text-white py-2">
+          <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-1"></i>สร้างใบงาน / กิจกรรมใหม่</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label small fw-bold">ชื่อใบงาน / กิจกรรม</label>
+            <input type="text" name="title" class="form-control form-control-sm" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">คำชี้แจง / โจทย์</label>
+            <textarea name="description" rows="2" class="form-control form-control-sm"></textarea>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold">รูปแบบ</label>
+              <select name="activity_type" class="form-select form-select-sm">
+                {% for val, lbl in activity_types %}
+                <option value="{{ val }}">{{ lbl }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">คะแนนเต็มกิจกรรม</label>
+              <input type="number" step="0.5" min="1" name="max_score" class="form-control form-control-sm" value="{{ default_activity_max_score|default:5 }}" required>
+            </div>
+          </div>
+          <div>
+            <label class="form-label small fw-bold">อยู่ในช่วงคะแนน</label>
+            <select name="score_period_id" class="form-select form-select-sm">
+              {% for p in open_periods %}
+              <option value="{{ p.id }}">ช่วงที่ {{ p.order_no }}: {{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="submit" class="btn btn-sm btn-primary fw-bold">สร้างกิจกรรม</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal แก้ไขใบงาน / กิจกรรม -->
+<div class="modal fade" id="editActivityModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="edit_activity">
+        <input type="hidden" name="target_activity_id" id="editActId">
+        <div class="modal-header bg-dark text-white py-2">
+          <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-1"></i>แก้ไขใบงาน / กิจกรรม</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label small fw-bold">ชื่อใบงาน / กิจกรรม</label>
+            <input type="text" name="title" id="editActTitle" class="form-control form-control-sm" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">คำชี้แจง / โจทย์</label>
+            <textarea name="description" id="editActDesc" rows="2" class="form-control form-control-sm"></textarea>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold">รูปแบบ</label>
+              <select name="activity_type" id="editActType" class="form-select form-select-sm">
+                {% for val, lbl in activity_types %}
+                <option value="{{ val }}">{{ lbl }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">คะแนนเต็มกิจกรรม</label>
+              <input type="number" step="0.5" min="1" name="max_score" id="editActMaxScore" class="form-control form-control-sm" required>
+            </div>
+          </div>
+          <div class="row g-2 align-items-center">
+            <div class="col-8">
+              <label class="form-label small fw-bold">อยู่ในช่วงคะแนน</label>
+              <select name="score_period_id" id="editActPeriodId" class="form-select form-select-sm">
+                {% for p in open_periods %}
+                <option value="{{ p.id }}">ช่วงที่ {{ p.order_no }}: {{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-4 pt-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_active" value="1" id="editActActive" checked>
+                <label class="form-check-label small fw-bold" for="editActActive">เปิดรับงาน</label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="submit" class="btn btn-sm btn-primary fw-bold">บันทึกการแก้ไข</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openEditActivityModal(id, title, desc, atype, maxScore, periodId, isActive) {
+  document.getElementById('editActId').value = id;
+  document.getElementById('editActTitle').value = title || '';
+  document.getElementById('editActDesc').value = desc || '';
+  document.getElementById('editActType').value = atype || 'general';
+  document.getElementById('editActMaxScore').value = maxScore;
+  if (periodId) document.getElementById('editActPeriodId').value = periodId;
+  document.getElementById('editActActive').checked = !!isActive;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('editActivityModal')).show();
+}
+</script>
+{% endblock %}

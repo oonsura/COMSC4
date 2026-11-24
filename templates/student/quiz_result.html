@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% load comsc4_tags %}
+{% block title %}ผลคะแนนแบบทดสอบ AI{% endblock %}
+{% block page_header %}ผลคะแนนแบบทดสอบ: {{ quiz.title }}{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3">
+      {% if user.avatar_url %}
+        <img src="{{ user.avatar_url }}" class="avatar-circle avatar-lg">
+      {% else %}
+        <div class="avatar-circle avatar-lg">{{ user.avatar_initial }}</div>
+      {% endif %}
+      <div>
+        <h5 class="fw-bold mb-1">{{ user.get_full_name }} (รหัส {{ user.student_id }})</h5>
+        <div class="text-muted small">ตอบถูก {{ attempt.correct_count }} จาก {{ attempt.total_questions }} ข้อ · ใช้เวลา {{ attempt.time_spent_seconds }} วินาที</div>
+      </div>
+    </div>
+    <div class="text-end">
+      <div class="fs-2 fw-bold text-success">{{ attempt.score }} / {{ attempt.max_score }} คะแนน</div>
+      <a href="{% url 'core:student_lessons' %}" class="btn btn-sm btn-outline-primary">กลับหน้าบทเรียน</a>
+    </div>
+  </div>
+</div>
+
+{% for q in questions %}
+{% with chosen=answers|get_item:q.id %}
+<div class="card mb-2 border-start border-4 {% if chosen == q.correct_choice %}border-success{% else %}border-danger{% endif %}">
+  <div class="card-body py-2">
+    <div class="fw-bold">ข้อ {{ q.order_no }}. {{ q.question_text }}</div>
+    <div class="small mt-1">
+      คำตอบที่คุณเลือก: <b>{{ chosen }}</b> | เฉลยที่ถูกต้อง: <b class="text-success">{{ q.correct_choice }}</b>
+    </div>
+    {% if q.explanation %}
+    <div class="small text-muted mt-1"><i class="bi bi-lightbulb text-warning me-1"></i>คำอธิบาย AI: {{ q.explanation }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endwith %}
+{% endfor %}
+{% endblock %}

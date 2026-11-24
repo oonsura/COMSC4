@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% block title %}คะแนนและสถิติของคุณ - COMSC4{% endblock %}
+{% block page_header %}คะแนนและสถิติของคุณ{% endblock %}
+{% block extra_css %}
+<style>
+  .rank-legend-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+    gap: 0.65rem;
+  }
+  @media (min-width: 992px) {
+    .rank-legend-grid {
+      grid-template-columns: repeat(7, 1fr);
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+{% if rank_overview %}
+<div class="card mb-3 border-primary border-opacity-25 shadow-sm">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 bg-light">
+    <span class="fw-bold"><i class="bi bi-trophy-fill text-warning me-2"></i>เกณฑ์ระดับถ้วยรางวัลทั้ง 7 ระดับ</span>
+    {% if rank_overview.overall_rank %}
+    <div class="d-flex align-items-center gap-2 small">
+      <img src="{{ rank_overview.overall_rank.icon_url }}" alt="{{ rank_overview.overall_rank.name }}" style="width:26px;height:26px;object-fit:contain;">
+      <span>รวม 2 ช่วง:</span>
+      <span class="badge px-2 py-1" style="background:{{ rank_overview.overall_rank.color_hex }};color:#fff;">
+        {{ rank_overview.overall_rank.name }}
+      </span>
+      <span class="fw-bold text-dark">{{ rank_overview.overall_percent|floatformat:1 }}%</span>
+      <span class="text-muted">({{ rank_overview.overall_score|floatformat:1 }} / {{ rank_overview.overall_max|floatformat:0 }} คะแนน)</span>
+    </div>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <div class="rank-legend-grid">
+      {% for tier in rank_overview.tiers %}
+      <div class="border rounded-3 p-2 text-center d-flex flex-column align-items-center justify-content-between {% if tier.id in rank_overview.held_tier_ids %}bg-light border-2 shadow-sm{% else %}bg-white{% endif %}"
+           {% if tier.id in rank_overview.held_tier_ids %}style="border-color:{{ tier.color_hex }} !important;"{% endif %}>
+        <img src="{{ tier.icon_url }}" alt="{{ tier.name }}" style="width:58px;height:58px;object-fit:contain;" class="my-1">
+        <div>
+          <div class="fw-bold small" style="color:{{ tier.color_hex }};">{{ tier.name }}</div>
+          <div class="text-muted" style="font-size:0.74rem;">{{ tier.condition_display }}</div>
+        </div>
+        {% if tier.id in rank_overview.held_tier_ids %}
+        <span class="badge mt-1" style="background:{{ tier.color_hex }};color:#fff;font-size:0.65rem;">ได้รับอยู่</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if period_summaries %}
+<div class="row g-3 mb-3">
+  {% for ps in period_summaries %}
+  <div class="col-md-6">
+    <div class="card h-100 border-2 shadow-sm" {% if ps.rank %}style="border-color:{{ ps.rank.color_hex }} !important;"{% endif %}>
+      <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 bg-light">
+        <div>
+          <span class="fw-bold text-dark"><i class="bi bi-layers-fill text-primary me-1"></i>{{ ps.period.name }}</span>
+          <span class="badge bg-light text-dark border ms-1">{% if ps.period.score_calc_mode == 'proportional' %}เฉลี่ยสัดส่วน{% else %}รวมตรง{% endif %}</span>
+        </div>
+        {% if ps.period.is_finalized %}
+          <span class="badge bg-danger">สรุปคะแนนแล้ว</span>
+        {% else %}
+          <span class="badge bg-success">เปิดใช้งาน</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-3 mb-3">
+          {% if ps.rank %}
+          <img src="{{ ps.rank.icon_url }}" alt="{{ ps.rank.name }}" style="width:84px;height:84px;object-fit:contain;" class="flex-shrink-0">
+          {% endif %}
+          <div class="flex-grow-1">
+            <div class="small text-muted fw-semibold">ระดับถ้วยรางวัลประจำช่วงคะแนน</div>
+            <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+              {% if ps.rank %}
+              <span class="badge fs-6 px-3 py-1" style="background:{{ ps.rank.color_hex }};color:#fff;">
+                {{ ps.rank.name }}
+              </span>
+              {% endif %}
+              <span class="fs-3 fw-bold text-dark">{{ ps.percent|floatformat:1 }}%</span>
+            </div>
+            <div class="small text-muted mt-1">
+              คะแนนรวมช่วงนี้: <b>{{ ps.net_pts|floatformat:1 }} / {{ ps.max_score|floatformat:0 }}</b> คะแนน
+              {% if ps.next_rank %}
+                · ถัดไป: <b>{{ ps.next_rank.name }}</b> ({{ ps.next_rank.condition_display }})
+              {% endif %}
+            </div>
+            <div class="progress mt-2" style="height:8px;">
+              <div class="progress-bar" role="progressbar"
+                   style="width:{{ ps.percent|floatformat:1 }}%;{% if ps.rank %}background:{{ ps.rank.color_hex }};{% endif %}"></div>
+            </div>
+          </div>
+        </div>
+        <div class="row g-2 text-center">
+          <div class="col-3">
+            <div class="border rounded-2 p-2 bg-light h-100">
+              <div class="text-muted" style="font-size:0.7rem;">คะแนนกิจกรรม</div>
+              <div class="fw-bold small">{{ ps.activity_pts|floatformat:2 }}</div>
+              {% if ps.period.score_calc_mode == 'proportional' and ps.raw_activity_pts != ps.activity_pts %}
+                <div class="text-muted" style="font-size:0.65rem;">(ดิบ {{ ps.raw_activity_pts|floatformat:1 }})</div>
+              {% endif %}
+            </div>
+          </div>
+          <div class="col-3">
+            <div class="border rounded-2 p-2 bg-light h-100">
+              <div class="text-muted" style="font-size:0.7rem;">บวก (+)</div>
+              <div class="fw-bold small text-success">+{{ ps.plus_pts|floatformat:1 }}</div>
+            </div>
+          </div>
+          <div class="col-3">
+            <div class="border rounded-2 p-2 bg-light h-100">
+              <div class="text-muted" style="font-size:0.7rem;">ลบ (-)</div>
+              <div class="fw-bold small text-danger">{{ ps.minus_pts|floatformat:1 }}</div>
+            </div>
+          </div>
+          <div class="col-3">
+            <div class="border rounded-2 p-2 bg-primary-subtle border-primary-subtle h-100">
+              <div class="text-muted" style="font-size:0.7rem;">รวมช่วงนี้</div>
+              <div class="fw-bold small text-primary">{{ ps.net_pts|floatformat:1 }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-list-stars text-success me-2"></i>ประวัติคะแนนทั้งหมดของคุณ</div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:540px;overflow-y:auto;">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>เวลา</th><th>เหตุผล / กฎคะแนน</th><th class="text-end">คะแนน</th></tr>
+            </thead>
+            <tbody>
+              {% for log in my_logs %}
+              <tr>
+                <td class="small text-muted">{{ log.created_at|date:"d/m H:i" }}</td>
+                <td class="small">
+                  {{ log.reason }}
+                  {% if log.score_period %}
+                  <div><span class="badge bg-light text-dark border" style="font-size:0.66rem;">{{ log.score_period.name }}</span></div>
+                  {% endif %}
+                </td>
+                <td class="text-end fw-bold {% if log.points >= 0 %}text-success{% else %}text-danger{% endif %}">
+                  {% if log.points >= 0 %}+{% endif %}{{ log.points|floatformat:1 }}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="3" class="text-center text-muted py-4">ยังไม่มีรายการคะแนน</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    {% include 'student/_period_stats_tabs_card.html' with tab_prefix='scores' pref_key='scores_period_id' room_label=selected_room_display allow_room_switch=True max_list_height='470px' %}
+  </div>
+</div>
+{% endblock %}

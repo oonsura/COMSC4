@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}ตั้งค่าระบบ · Session (1 Session ต่อบัญชี) - COMSC4{% endblock %}
+{% block page_header %}ตั้งค่าระบบ · จำกัด 1 Session ต่อบัญชีและอุปกรณ์ที่ออนไลน์{% endblock %}
+{% block content %}
+{% include 'admin_panel/_settings_nav.html' %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header bg-primary text-white">
+        <i class="bi bi-shield-lock-fill me-2"></i>นโยบายจำกัด Session (A.1)
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_policy">
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" name="enforce_single_session_student" value="1" id="enfStudent" {% if setting.enforce_single_session_student %}checked{% endif %}>
+            <label class="form-check-label fw-bold" for="enfStudent">
+              บังคับนักเรียนใช้งานได้ 1 Session ต่อบัญชีในเวลาเดียวกัน
+            </label>
+            <div class="small text-muted mt-1">
+              หากล็อกอินซ้ำจากอุปกรณ์อื่น ระบบจะแสดงหน้าให้เลือกว่าจะใช้งานต่อที่อุปกรณ์ใหม่หรือคงอุปกรณ์เดิม
+            </div>
+          </div>
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" name="enforce_single_session_staff" value="1" id="enfStaff" {% if setting.enforce_single_session_staff %}checked{% endif %}>
+            <label class="form-check-label fw-bold" for="enfStaff">
+              บังคับผู้ดูแล/ครู ใช้งานได้ 1 Session ต่อบัญชี
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 fw-bold">บันทึกนโยบาย Session</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-laptop text-success me-2"></i>ตาราง user_sessions ที่กำลังออนไลน์ (Active Sessions)</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>ผู้ใช้</th><th>บทบาท</th><th>อุปกรณ์ / เบราว์เซอร์</th><th>IP</th><th>เวลาล่าสุด</th><th class="text-end">ตัดการเชื่อมต่อ</th></tr>
+            </thead>
+            <tbody>
+              {% for s in active_sessions %}
+              <tr>
+                <td class="fw-bold small">{{ s.user.get_full_name }} ({{ s.user.student_id|default:s.user.username }})</td>
+                <td><span class="badge bg-secondary">{{ s.user.get_role_display }}</span></td>
+                <td class="small">{{ s.device_info }}</td>
+                <td><code>{{ s.ip_address }}</code></td>
+                <td class="small">{{ s.last_active|date:"d/m H:i:s" }}</td>
+                <td class="text-end">
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="revoke_session">
+                    <input type="hidden" name="session_id" value="{{ s.id }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">เตะออก</button>
+                  </form>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="6" class="text-center text-muted py-4">ไม่มี Session ที่ออนไลน์</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

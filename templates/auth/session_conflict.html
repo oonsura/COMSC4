@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ตรวจพบการล็อกอินซ้ำ (1-Session Guard) - COMSC4</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Sarabun', sans-serif; }
+    body {
+      background: linear-gradient(135deg, #450a0a 0%, #1e1b4b 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .conflict-card {
+      background: #fff;
+      border-radius: 18px;
+      max-width: 540px;
+      width: 100%;
+      padding: 2rem;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+    }
+  </style>
+</head>
+<body>
+<div class="conflict-card">
+  <div class="text-center mb-3">
+    <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-warning-subtle text-warning mb-2" style="width:68px;height:68px;">
+      <i class="bi bi-laptop fs-1"></i>
+    </div>
+    <h5 class="fw-bold text-dark mb-1">ตรวจพบการใช้งานค้างอยู่ที่อุปกรณ์อื่น</h5>
+    <p class="small text-muted mb-0">ตามเงื่อนไขระบบ  บัญชีนักเรียน 1 คนใช้ได้ 1 Session ในเวลาเดียวกัน</p>
+  </div>
+
+  <div class="alert alert-warning small">
+    <div class="fw-bold mb-1"><i class="bi bi-person-check-fill me-1"></i>บัญชี: {{ conflict_user.get_full_name }} ({{ conflict_user.email }})</div>
+    <div><b>อุปกรณ์เดิมที่กำลังออนไลน์:</b> {{ old_device }}</div>
+    <div><b>เวลาที่ใช้งานล่าสุด:</b> {{ old_time }}</div>
+    <hr class="my-2">
+    <div><b>อุปกรณ์ใหม่ที่คุณกำลังจะเข้าใช้งาน:</b> {{ new_device }}</div>
+  </div>
+
+  <p class="small fw-semibold text-center text-dark mb-3">กรุณาเลือกว่าคุณต้องการใช้งานต่อที่อุปกรณ์ใหม่นี้ หรือคงการใช้งานที่อุปกรณ์เดิม?</p>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="d-grid gap-2">
+      <button type="submit" name="choice" value="new_device" class="btn btn-success py-2 fw-bold">
+        <i class="bi bi-check2-circle me-2"></i>ใช้งานต่อที่อุปกรณ์ใหม่นี้ (ตัดการเชื่อมต่ออุปกรณ์เดิมทันที)
+      </button>
+      <button type="submit" name="choice" value="keep_old" class="btn btn-outline-secondary py-2 fw-semibold">
+        <i class="bi bi-arrow-left-circle me-2"></i>คงการใช้งานที่อุปกรณ์เดิม (ยกเลิกการล็อกอินที่เครื่องนี้)
+      </button>
+    </div>
+  </form>
+</div>
+</body>
+</html>

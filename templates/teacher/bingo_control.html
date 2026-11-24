@@ -1,0 +1,756 @@
+{% extends 'base.html' %}
+{% block title %}ควบคุมวงล้อ Bingo: {{ room.title }}{% endblock %}
+{% block page_header %}วงล้อออกเลข Bingo · {{ room.title }} · {{ room.size }}×{{ room.size }} · ช่วง {{ room.number_range }}{% endblock %}
+{% block extra_css %}
+<style>
+  .wheel-stage {
+    position: relative;
+    width: 220px; height: 220px;
+    margin: 0 auto;
+    border-radius: 50%;
+    background: radial-gradient(circle, #1e293b 0%, #0f172a 100%);
+    border: 6px solid #eab308;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.28);
+    overflow: hidden;
+  }
+  .wheel-bg-img {
+    position: absolute;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    transition: transform 0.08s linear;
+  }
+  .wheel-number-overlay {
+    position: relative;
+    z-index: 2;
+    font-size: 3.8rem;
+    font-weight: 900;
+    color: #fde047;
+    text-shadow: 0 4px 12px rgba(0,0,0,0.85);
+  }
+  .num-chip {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    background: #e2e8f0;
+    color: #475569;
+  }
+  .num-chip.drawn,
+  .num-chip.drawn-all {
+    background: linear-gradient(135deg, var(--bingo-all-color, #16a34a), #15803d);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(22,163,74,0.35);
+  }
+  .num-chip.drawn-room {
+    background: linear-gradient(135deg, #facc15, var(--bingo-room-color, #eab308));
+    color: #0f172a;
+    box-shadow: 0 2px 6px rgba(234,179,8,0.4);
+  }
+  .room-filter-pill.active {
+    background-color: #0d6efd !important;
+    color: #fff !important;
+    border-color: #0d6efd !important;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<audio id="audioBeep1" src="/static/bingo/beep1.wav" preload="auto"></audio>
+<audio id="audioBeep2" src="/static/bingo/beep2.wav" preload="auto"></audio>
+<audio id="audioBg" src="/static/bingo/dsbingo.mp3" loop preload="auto"></audio>
+
+<!-- แถบเลือก Filter ห้องที่ต้องการออกเลข & ดูข้อมูล -->
+<div class="card mb-3 border-start border-4 border-primary">
+  <div class="card-body py-2">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <a href="{% url 'core:teacher_bingo_manage' %}" class="btn btn-sm btn-outline-secondary fw-bold">
+          <i class="bi bi-arrow-left me-1"></i>กลับหน้าแรกวงล้อ Bingo
+        </a>
+        <span class="fw-bold text-primary"><i class="bi bi-funnel-fill me-1"></i>เลือกห้องสำหรับออกเลข Bingo:</span>
+        <span class="badge bg-info text-dark" id="scopeTargetBadge">กำลังควบคุม: {{ selected_room_label }}</span>
+      </div>
+      <div class="d-flex flex-wrap gap-1">
+        <form method="post" class="d-inline" onsubmit="return confirm('ล้างเลขที่ออกเฉพาะขอบเขตห้องที่เลือกไว้?')">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reset_drawn">
+          <input type="hidden" name="reset_scope" id="resetScopeInput" value="{{ selected_room_filter }}">
+          <input type="hidden" name="room_filter" id="resetRoomFilterInput" value="{{ selected_room_filter }}">
+          <button type="submit" class="btn btn-sm btn-outline-warning text-dark fw-bold">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>ล้างเลขเฉพาะห้องที่เลือก
+          </button>
+        </form>
+        <form method="post" class="d-inline" onsubmit="return confirm('เริ่มรอบใหม่ทุกห้อง? ระบบจะล้างเลขที่ออกและรายชื่อผู้ชนะทั้งหมด แต่คงตาราง Bingo ของนักเรียนไว้')">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reset_drawn">
+          <input type="hidden" name="reset_scope" value="all">
+          <input type="hidden" name="room_filter" value="{{ selected_room_filter }}">
+          <button type="submit" class="btn btn-sm btn-warning fw-bold">
+            <i class="bi bi-arrow-repeat me-1"></i>เริ่มรอบใหม่ทุกห้อง
+          </button>
+        </form>
+        <form method="post" class="d-inline" onsubmit="return confirm('เริ่มเกมใหม่ทั้งหมด? ระบบจะล้างเลขที่ออก ผู้ชนะ และตาราง Bingo ของนักเรียนทุกคน')">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reset_all_new_game">
+          <button type="submit" class="btn btn-sm btn-danger fw-bold"><i class="bi bi-trash me-1"></i>ล้างเกมทั้งหมด</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ปุ่มลัดเลือกห้องพร้อมแสดงจำนวนเลขที่ออกไปแล้ว -->
+    <div class="d-flex flex-wrap gap-1" id="roomFilterPillsBox">
+      {% for rb in drawn_by_room %}
+      <button type="button" class="btn btn-sm {% if rb.room_code == selected_room_filter %}btn-primary active{% else %}btn-outline-secondary{% endif %} room-filter-pill"
+              data-room="{{ rb.room_code }}"
+              onclick="changeRoomFilter('{{ rb.room_code }}')">
+        {{ rb.room_label }}
+        <span class="badge bg-light text-dark ms-1">{{ rb.drawn_count }} เลข</span>
+        {% if rb.cards_count %}<span class="badge bg-warning text-dark">{{ rb.cards_count }} ตาราง</span>{% endif %}
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div id="newWinnerToast" class="alert alert-success d-none shadow-sm fw-bold mb-3"></div>
+
+<div class="row g-3">
+  <!-- วงล้อหมุนสุ่มเลข Bingo & สถิติหลังออกเลขทันที -->
+  <div class="col-lg-5">
+    <div class="card text-center mb-3">
+      <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-disc-fill text-warning me-2"></i>วงล้อออกเลข (<span id="wheelHeaderScope">{{ selected_room_label }}</span>)</span>
+        <button type="button" class="btn btn-sm btn-outline-warning" onclick="toggleBgMusic()">
+          <i class="bi bi-music-note-beamed"></i> เพลงพื้นหลัง
+        </button>
+      </div>
+      <div class="card-body">
+        <div class="wheel-stage mb-3">
+          <img src="/static/bingo/c.png" id="wheelSpinImg" class="wheel-bg-img" alt="Wheel" onerror="this.style.display='none'">
+          <div id="wheelCenterNum" class="wheel-number-overlay">?</div>
+        </div>
+        <div id="drawStatusText" class="fw-bold text-primary mb-2">พร้อมหมุนวงล้อออกเลขสำหรับ: <b>{{ selected_room_label }}</b></div>
+
+        <!-- การ์ดสถิติทันทีเมื่อออกเลข: มีนักเรียนได้รับเลขนี้กี่คนของห้องที่เลือก -->
+        <div id="latestHitStatsCard" class="alert alert-info text-start py-2 px-3 mb-3 {% if not latest_hit_stats %}d-none{% endif %}">
+          {% if latest_hit_stats %}
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-bold text-dark">
+              <i class="bi bi-bar-chart-fill text-primary me-1"></i>
+              สถิติเลข <span class="badge bg-danger fs-6">{{ latest_hit_stats.number }}</span> ({{ latest_hit_stats.target_room_label }})
+            </span>
+            <span class="badge bg-success fs-6">ได้รับ {{ latest_hit_stats.hit_count }} / {{ latest_hit_stats.eligible_cards_count }} คน ({{ latest_hit_stats.hit_percent }}%)</span>
+          </div>
+          <div class="progress mb-2" style="height: 10px;">
+            <div class="progress-bar bg-success" style="width: {{ latest_hit_stats.hit_percent }}%"></div>
+          </div>
+          <div class="small text-secondary">
+            {% if latest_hit_stats.hit_students %}
+              <b>ผู้ที่มีเลข {{ latest_hit_stats.number }}:</b>
+              {% for hs in latest_hit_stats.hit_students|slice:":15" %}
+                <span class="badge bg-white text-dark border me-1">{{ hs.room }} #{{ hs.class_number }} {{ hs.name }}</span>
+              {% endfor %}
+              {% if latest_hit_stats.hit_students|length > 15 %}
+                <span class="text-muted">และอีก {{ latest_hit_stats.hit_students|length|add:"-15" }} คน</span>
+              {% endif %}
+            {% else %}
+              ยังไม่มีนักเรียนในขอบเขตนี้ที่มีเลข {{ latest_hit_stats.number }} ในตาราง
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="d-grid gap-2 mb-3">
+          <button type="button" id="btnSpinNormal" class="btn btn-success btn-lg fw-bold shadow" onclick="spinBingoWheel('normal')">
+            <i class="bi bi-play-circle-fill me-2"></i>หมุนวงล้อสุ่ม (<span class="btn-scope-label">{{ selected_room_label }}</span>)
+          </button>
+          <button type="button" id="btnSpinCond" class="btn btn-warning fw-bold" onclick="spinBingoWheel('conditional')">
+            <i class="bi bi-funnel-fill me-2"></i>สุ่มมีเงื่อนไข ({{ room.get_draw_condition_display }})
+          </button>
+        </div>
+
+        <div class="input-group input-group-sm mb-3">
+          <span class="input-group-text fw-bold">ออกเลขระบุเอง:</span>
+          <input type="number" id="manualNumInput" class="form-control text-center fw-bold" min="{{ min_num }}" max="{{ max_num }}" placeholder="{{ min_num }}–{{ max_num }}">
+          <button type="button" class="btn btn-primary fw-bold" onclick="spinBingoWheel('teacher_manual')">ออกเลขนี้</button>
+        </div>
+
+        <!-- ให้สิทธิ์นักเรียนเลขที่ X ในห้องที่เลือกเป็นผู้ออกวงล้อ -->
+        <div class="border rounded-3 p-2 mb-3 bg-success-subtle border-success-subtle text-start" id="studentPickerGrantCard">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small fw-bold text-success-emphasis">
+              <i class="bi bi-person-check-fill me-1"></i>ให้นักเรียนเลขที่ X เป็นผู้ออกเลข
+            </span>
+            <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 fw-bold" onclick="revokeStudentPicker()">ยกเลิกสิทธิ์</button>
+          </div>
+          <div class="row g-1 align-items-center mb-2">
+            <div class="col-5">
+              <select id="pickerRoomCodeSelect" class="form-select form-select-sm">
+                {% for c in classrooms %}
+                <option value="{{ c.code }}" {% if c.code == picker_room_default %}selected{% endif %}>{{ c.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-3">
+              <input type="number" id="pickerClassNumberInput" class="form-control form-control-sm text-center fw-bold" min="1" placeholder="เลขที่">
+            </div>
+            <div class="col-4">
+              <button type="button" class="btn btn-sm btn-success w-100 fw-bold" onclick="grantStudentPicker()">ให้สิทธิ์</button>
+            </div>
+          </div>
+          {% if room_card_students %}
+          <select id="pickerStudentQuickSelect" class="form-select form-select-sm mb-2" onchange="onQuickPickerSelect(this)">
+            <option value="">-- หรือเลือกรายชื่อผู้มีตารางในห้องนี้ --</option>
+            {% for cs in room_card_students %}
+            <option value="{{ cs.id }}" data-room="{{ cs.room_code }}">{{ cs.room_display }} เลขที่ {{ cs.class_number }} · {{ cs.name }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+          <div id="activePickerStatusBox" class="small fw-semibold px-2 py-1 rounded bg-white border">
+            {% if active_picker %}
+              <span class="text-success"><i class="bi bi-broadcast me-1"></i>ผู้มีสิทธิ์ปัจจุบัน: <b>{{ active_picker.room_display }} เลขที่ {{ active_picker.class_number }} {{ active_picker.name }}</b> {% if room.active_picker_accepted %}<span class="badge bg-success ms-1">กดรับสิทธิ์แล้ว</span>{% else %}<span class="badge bg-warning text-dark ms-1">รอนักเรียนกดรับสิทธิ์</span>{% endif %}</span>
+            {% else %}
+              <span class="text-muted">ยังไม่มีนักเรียนที่ได้รับสิทธิ์ในขณะนี้</span>
+            {% endif %}
+          </div>
+          <div id="lastPickerEventText" class="text-muted mt-1" style="font-size:0.72rem;">{{ room.last_picker_event }}</div>
+        </div>
+
+        <form method="post" class="border-top pt-3 text-start">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_settings">
+          <input type="hidden" name="room_filter" value="{{ selected_room_filter }}">
+          <div class="row g-2 align-items-center">
+            <div class="col-7">
+              <label class="form-label small fw-bold mb-1">เงื่อนไขการสุ่ม</label>
+              <select name="draw_condition" class="form-select form-select-sm">
+                <option value="normal" {% if room.draw_condition == 'normal' %}selected{% endif %}>สุ่มปกติทุกตัวเลข</option>
+                <option value="no_even" {% if room.draw_condition == 'no_even' %}selected{% endif %}>ไม่ออกเลขคู่ · เฉพาะคี่</option>
+                <option value="no_odd" {% if room.draw_condition == 'no_odd' %}selected{% endif %}>ไม่ออกเลขคี่ · เฉพาะคู่</option>
+                <option value="only_low_half" {% if room.draw_condition == 'only_low_half' %}selected{% endif %}>เฉพาะครึ่งแรกของช่วง</option>
+                <option value="only_high_half" {% if room.draw_condition == 'only_high_half' %}selected{% endif %}>เฉพาะครึ่งหลังของช่วง</option>
+              </select>
+            </div>
+            <div class="col-5">
+              <label class="form-label small fw-bold mb-1">สถานะห้อง</label>
+              <select name="status" class="form-select form-select-sm">
+                <option value="open" {% if room.status == 'open' %}selected{% endif %}>เปิดเล่น</option>
+                <option value="playing" {% if room.status == 'playing' %}selected{% endif %}>กำลังออกเลข</option>
+                <option value="closed" {% if room.status == 'closed' %}selected{% endif %}>ปิดห้อง</option>
+              </select>
+            </div>
+            <div class="col-8">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="allow_student_pick" value="1" id="stPickChk" {% if room.allow_student_pick %}checked{% endif %}>
+                <label class="form-check-label small fw-bold" for="stPickChk">เปิดโหมดให้นักเรียนออกเลข</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="continuous_play" value="1" id="contChk" {% if room.continuous_play %}checked{% endif %}>
+                <label class="form-check-label small fw-bold" for="contChk">เล่นต่อเนื่องไม่หยุดเมื่อมีผู้ชนะ</label>
+              </div>
+            </div>
+            <div class="col-4 text-end">
+              <button type="submit" class="btn btn-sm btn-outline-primary w-100">บันทึก</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% if room_cards_summary %}
+    <div class="card">
+      <div class="card-header small fw-bold"><i class="bi bi-people me-1 text-primary"></i>จำนวนนักเรียนที่สร้างตารางแยกตามห้อง (รวม {{ cards|length }} ตาราง)</div>
+      <div class="card-body py-2">
+        <div class="d-flex flex-wrap gap-1">
+          {% for rname, rcnt in room_cards_summary %}
+          <span class="badge bg-light text-dark border">{{ rname }}: <b>{{ rcnt }}</b> คน</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ฝั่งขวา: กระดานตัวเลข + ประวัติการออกเลขพร้อมสถิติ + สรุปเลขที่ออกไปแล้วทุกห้อง + ผู้ชนะ -->
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span>
+          <i class="bi bi-grid-3x3-gap text-primary me-2"></i>
+          กระดานตัวเลข (<span id="boardScopeTitle">{{ selected_room_label }}</span>) · ในขอบเขต <b id="cardsCountText">{{ cards_count_in_scope }}</b> ตาราง
+        </span>
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          <span class="badge bg-success">สีเขียว = ออกทั้งระดับ</span>
+          <span class="badge bg-warning text-dark">สีเหลือง = ออกเฉพาะห้องนี้</span>
+          <span class="badge bg-dark" id="drawnCountBadge">ออกแล้ว {{ drawn_qs|length }} เลข</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="d-flex flex-wrap gap-2 justify-content-center" id="allNumbersBoard">
+          {% for n in all_range %}
+          <div class="num-chip" id="chip_{{ n }}">{{ n }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- ประวัติการออกเลขและสถิติจำนวนคนได้รับเลขในห้องที่เลือก -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center bg-light">
+        <span class="fw-bold"><i class="bi bi-table text-primary me-2"></i>ประวัติเลขที่ออก &amp; สถิติคนได้รับเลข · <span id="histScopeTitle">{{ selected_room_label }}</span></span>
+        <a href="#integratedBingoStatsSection" class="btn btn-sm btn-outline-primary">สถิติรวมด้านล่าง</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:240px;overflow-y:auto;">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>#</th>
+                <th>เลขที่ออก</th>
+                <th>ขอบเขตห้อง</th>
+                <th>รูปแบบ</th>
+                <th>คนได้รับเลขนี้</th>
+                <th>เวลา</th>
+              </tr>
+            </thead>
+            <tbody id="drawnHistoryTableBody">
+              {% for d in drawn_qs %}
+              <tr>
+                <td class="small text-muted">{{ forloop.counter }}</td>
+                <td><span class="badge {% if d.target_room_code == 'all' %}bg-success{% else %}bg-warning text-dark{% endif %} fs-6">{{ d.number }}</span></td>
+                <td class="small fw-semibold">{% if d.target_room_code == 'all' %}ทั้งระดับ{% else %}ห้อง {{ d.target_room_code }}{% endif %}</td>
+                <td class="small">{{ d.get_drawn_by_mode_display }}</td>
+                <td class="small">
+                  <span class="badge bg-info text-dark">
+                    {{ d.hit_count }} / {{ d.eligible_cards_count }} คน
+                  </span>
+                </td>
+                <td class="small text-muted">{{ d.created_at|date:"H:i:s" }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="6" class="text-center text-muted py-3 small">ยังไม่มีเลขที่ออกในขอบเขตนี้</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- สรุปเลขที่ออกไปแล้วแยกตามทุกห้อง -->
+    <div class="card mb-3">
+      <div class="card-header fw-bold"><i class="bi bi-building-check text-success me-2"></i>ดูเลขที่ออกไปแล้วแยกตามแต่ละห้อง (คลิกเลือกห้องเพื่อควบคุมต่อ)</div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:260px;overflow-y:auto;">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width:145px;">ห้องเรียน</th>
+                <th>เลขที่ออกแล้ว (รวมทั้งระดับ + ประจำห้อง)</th>
+                <th class="text-end" style="width:110px;">ชนะ / ตาราง</th>
+              </tr>
+            </thead>
+            <tbody id="drawnByRoomBody">
+              {% for rb in drawn_by_room %}
+              <tr class="{% if rb.room_code == selected_room_filter %}table-primary{% endif %}">
+                <td>
+                  <button type="button" class="btn btn-sm btn-link fw-bold p-0 text-decoration-none" onclick="changeRoomFilter('{{ rb.room_code }}')">
+                    {{ rb.room_label }}
+                  </button>
+                </td>
+                <td>
+                  {% for item in rb.effective_items %}
+                    <span class="badge {% if item.scope == 'all' %}bg-success{% else %}bg-warning text-dark{% endif %} me-1 mb-1">{{ item.number }}</span>
+                  {% empty %}
+                    <span class="text-muted small">- ยังไม่ออกเลข -</span>
+                  {% endfor %}
+                </td>
+                <td class="text-end small">
+                  <span class="badge bg-warning text-dark">{{ rb.winners_count }}</span> / {{ rb.cards_count }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- รายชื่อผู้ชนะแยกตามห้องเรียน -->
+    <div class="card">
+      <div class="card-header bg-warning-subtle fw-bold">
+        <i class="bi bi-trophy-fill text-warning me-2"></i>ผู้ชนะ Bingo แยกตามห้อง (เล่นต่อเนื่องไม่หยุดจนกว่าจะเริ่มใหม่)
+      </div>
+      <div class="card-body" id="winnersByRoomBoard">
+        {% if winners_by_room %}
+          <div class="row g-2">
+            {% for room_label, w_list in winners_by_room %}
+            <div class="col-md-6">
+              <div class="border rounded-3 p-2 bg-light h-100">
+                <div class="fw-bold text-primary border-bottom pb-1 mb-2 d-flex justify-content-between">
+                  <span><i class="bi bi-door-open-fill me-1"></i>ห้อง {{ room_label }}</span>
+                  <span class="badge bg-success">ชนะแล้ว {{ w_list|length }} คน</span>
+                </div>
+                {% for w in w_list %}
+                <div class="d-flex align-items-center justify-content-between py-1 border-bottom border-white">
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-warning text-dark">#{{ w.room_rank_order }}</span>
+                    <div>
+                      <div class="fw-bold" style="font-size:0.78rem;">{{ w.student.get_full_name }}</div>
+                      <div class="text-muted" style="font-size:0.68rem;">เลขที่ {{ w.student.class_number }} · {{ w.win_pattern }} (เลข {{ w.winning_number }})</div>
+                    </div>
+                  </div>
+                  <span class="badge bg-success">+{{ w.score_awarded }}</span>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="text-center text-muted py-3">ยังไม่มีผู้ชนะในขณะนี้</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mt-4" id="integratedBingoStatsSection">
+  <h6 class="fw-bold text-primary mb-2"><i class="bi bi-pie-chart-fill me-2"></i>สถิติ Bingo แยกห้อง/กลุ่ม</h6>
+  {% include 'teacher/_bingo_stats_panel.html' %}
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const ROOM_ID = {{ room.id }};
+const MIN_NUM = {{ min_num }};
+const MAX_NUM = {{ max_num }};
+const CSRF_TOKEN = '{{ csrf_token }}';
+let currentRoomFilter = '{{ selected_room_filter|escapejs }}';
+let currentRoomLabel = '{{ selected_room_label|escapejs }}';
+let drawnList = {{ drawn_json|safe }};
+let drawnScopeMap = {{ drawn_scope_json|safe }};
+let wheelAngle = 0;
+
+function markChips(nums, scopeMap) {
+  const sMap = scopeMap || drawnScopeMap || {};
+  document.querySelectorAll('.num-chip').forEach(el => {
+    el.classList.remove('drawn', 'drawn-all', 'drawn-room');
+  });
+  nums.forEach(n => {
+    const c = document.getElementById('chip_' + n);
+    if (c) {
+      const sc = sMap[String(n)] || 'all';
+      c.classList.add(sc === 'all' ? 'drawn-all' : 'drawn-room');
+    }
+  });
+  document.getElementById('drawnCountBadge').innerText = `ออกแล้ว ${nums.length} เลข`;
+  document.getElementById('wheelCenterNum').innerText = nums.length > 0 ? nums[nums.length - 1] : '?';
+}
+
+function toggleBgMusic() {
+  const a = document.getElementById('audioBg');
+  if (a.paused) { a.volume = 0.35; a.play(); } else { a.pause(); }
+}
+
+function syncPickerRoomFilter(scopeCode) {
+  const pickerRoomSel = document.getElementById('pickerRoomCodeSelect');
+  const quickSel = document.getElementById('pickerStudentQuickSelect');
+  if (pickerRoomSel && scopeCode && scopeCode !== 'all') {
+    const hasOpt = Array.from(pickerRoomSel.options).some(o => o.value === scopeCode);
+    if (hasOpt) pickerRoomSel.value = scopeCode;
+  }
+  if (quickSel) {
+    Array.from(quickSel.options).forEach(opt => {
+      if (!opt.value) {
+        opt.hidden = false;
+        return;
+      }
+      const optRoom = opt.getAttribute('data-room') || '';
+      const hide = (scopeCode && scopeCode !== 'all' && optRoom !== scopeCode);
+      opt.hidden = hide;
+      if (hide && opt.selected) {
+        quickSel.value = '';
+      }
+    });
+  }
+}
+
+function changeRoomFilter(newFilter) {
+  currentRoomFilter = newFilter || 'all';
+  document.querySelectorAll('#roomFilterPillsBox .room-filter-pill').forEach(btn => {
+    const isMatch = (btn.getAttribute('data-room') === currentRoomFilter);
+    btn.classList.toggle('btn-primary', isMatch);
+    btn.classList.toggle('active', isMatch);
+    btn.classList.toggle('btn-outline-secondary', !isMatch);
+  });
+  const resetScopeEl = document.getElementById('resetScopeInput');
+  if (resetScopeEl) resetScopeEl.value = currentRoomFilter;
+  const resetRoomEl = document.getElementById('resetRoomFilterInput');
+  if (resetRoomEl) resetRoomEl.value = currentRoomFilter;
+  document.querySelectorAll('input[name="room_filter"]').forEach(el => {
+    el.value = currentRoomFilter;
+  });
+  syncPickerRoomFilter(currentRoomFilter);
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('room_filter', currentRoomFilter);
+    window.history.replaceState({}, '', url.toString());
+  } catch (e) {}
+  refreshControlState();
+}
+
+function renderHitStatsCard(stats) {
+  const card = document.getElementById('latestHitStatsCard');
+  if (!stats) {
+    card.classList.add('d-none');
+    return;
+  }
+  card.classList.remove('d-none');
+  const studentsHtml = (stats.hit_students && stats.hit_students.length > 0)
+    ? `<b>ผู้ที่มีเลข ${stats.number}:</b> ` + stats.hit_students.slice(0, 15).map(hs =>
+        `<span class="badge bg-white text-dark border me-1">${hs.room} #${hs.class_number} ${hs.name}</span>`).join('') + (stats.hit_students.length > 15 ? ` <span class="text-muted">และอีก ${stats.hit_students.length - 15} คน</span>` : '')
+    : `ยังไม่มีนักเรียนใน ${stats.target_room_label} ที่มีเลข ${stats.number} ในตาราง`;
+
+  let byRoomHtml = '';
+  if (stats.target_room_code === 'all' && stats.by_room && Object.keys(stats.by_room).length > 0) {
+    byRoomHtml = '<div class="mt-2 pt-1 border-top d-flex flex-wrap gap-1">' +
+      Object.entries(stats.by_room).map(([rl, info]) =>
+        `<span class="badge bg-light text-dark border">${rl}: ${info.hits}/${info.total} คน (${info.percent}%)</span>`).join('') + '</div>';
+  }
+
+  card.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <span class="fw-bold text-dark">
+        <i class="bi bi-bar-chart-fill text-primary me-1"></i>
+        สถิติเลข <span class="badge bg-danger fs-6">${stats.number}</span> (${stats.target_room_label})
+      </span>
+      <span class="badge bg-success fs-6">ได้รับ ${stats.hit_count} / ${stats.eligible_cards_count} คน (${stats.hit_percent}%)</span>
+    </div>
+    <div class="progress mb-2" style="height: 10px;">
+      <div class="progress-bar bg-success" style="width: ${stats.hit_percent}%"></div>
+    </div>
+    <div class="small text-secondary">${studentsHtml}</div>
+    ${byRoomHtml}
+  `;
+}
+
+function spinBingoWheel(mode) {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('mode', mode);
+  fd.append('target_room_code', currentRoomFilter);
+  if (mode === 'teacher_manual') {
+    const val = document.getElementById('manualNumInput').value;
+    if (!val) return alert('กรุณากรอกตัวเลขที่ต้องการออก');
+    fd.append('number', val);
+  }
+
+  const wheelImg = document.getElementById('wheelSpinImg');
+  const centerNum = document.getElementById('wheelCenterNum');
+  const beep1 = document.getElementById('audioBeep1');
+  const beep2 = document.getElementById('audioBeep2');
+
+  const spinTimer = setInterval(() => {
+    wheelAngle += 45;
+    wheelImg.style.transform = `rotate(${wheelAngle}deg)`;
+    centerNum.innerText = Math.floor(Math.random() * (MAX_NUM - MIN_NUM + 1)) + MIN_NUM;
+    try { beep1.currentTime = 0; beep1.play(); } catch (e) {}
+  }, 70);
+
+  fetch(`/api/bingo/${ROOM_ID}/draw/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      setTimeout(() => {
+        clearInterval(spinTimer);
+        if (!data.ok) {
+          alert(data.error);
+          return;
+        }
+        centerNum.innerText = data.number;
+        try { beep2.currentTime = 0; beep2.play(); } catch (e) {}
+        const hs = data.hit_stats;
+        const statText = hs ? ` · มีนักเรียนได้รับ ${hs.hit_count}/${hs.eligible_cards_count} คน (${hs.hit_percent}%)` : '';
+        document.getElementById('drawStatusText').innerHTML =
+          `ออกหมายเลข <span class="badge bg-danger fs-5">${data.number}</span> (${data.target_room_label}${statText})`;
+
+        if (hs) renderHitStatsCard(hs);
+
+        const toastEl = document.getElementById('newWinnerToast');
+        if (data.new_winners && data.new_winners.length > 0) {
+          const names = data.new_winners.map(w => `${w.name} (${w.room} อันดับ #${w.room_rank})`).join(', ');
+          toastEl.innerHTML = `<i class="bi bi-trophy-fill me-2"></i>มีผู้ชนะ Bingo เพิ่ม: ${names} — สามารถหมุนออกเลขต่อได้ทันที!`;
+          toastEl.classList.remove('d-none');
+        }
+        refreshControlState();
+      }, 900);
+    });
+}
+
+function refreshControlState() {
+  fetch(`/api/bingo/${ROOM_ID}/state/?room_filter=${encodeURIComponent(currentRoomFilter)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      currentRoomLabel = data.room_filter_label;
+      drawnScopeMap = data.drawn_scope_map || {};
+      markChips(data.drawn_numbers, drawnScopeMap);
+      document.getElementById('cardsCountText').innerText = data.cards_count_in_scope;
+      document.getElementById('scopeTargetBadge').innerText = `กำลังควบคุม: ${currentRoomLabel}`;
+      document.getElementById('wheelHeaderScope').innerText = currentRoomLabel;
+      document.getElementById('boardScopeTitle').innerText = currentRoomLabel;
+      document.getElementById('histScopeTitle').innerText = currentRoomLabel;
+      document.querySelectorAll('.btn-scope-label').forEach(el => { el.innerText = currentRoomLabel; });
+
+      if (data.latest_hit_stats) {
+        renderHitStatsCard(data.latest_hit_stats);
+      } else {
+        document.getElementById('latestHitStatsCard').classList.add('d-none');
+      }
+
+      // อัปเดตปุ่มลัดห้อง + ตารางสรุปเลขที่ออกไปแล้วแต่ละห้อง
+      if (data.drawn_by_room) {
+        document.getElementById('roomFilterPillsBox').innerHTML = data.drawn_by_room.map(rb => `
+          <button type="button" class="btn btn-sm ${rb.room_code === currentRoomFilter ? 'btn-primary active' : 'btn-outline-secondary'} room-filter-pill"
+                  data-room="${rb.room_code}"
+                  onclick="changeRoomFilter('${rb.room_code}')">
+            ${rb.room_label}
+            <span class="badge bg-light text-dark ms-1">${rb.drawn_count} เลข</span>
+            ${rb.cards_count ? `<span class="badge bg-warning text-dark">${rb.cards_count} ตาราง</span>` : ''}
+          </button>
+        `).join('');
+
+        document.getElementById('drawnByRoomBody').innerHTML = data.drawn_by_room.map(rb => `
+          <tr class="${rb.room_code === currentRoomFilter ? 'table-primary' : ''}">
+            <td>
+              <button type="button" class="btn btn-sm btn-link fw-bold p-0 text-decoration-none" onclick="changeRoomFilter('${rb.room_code}')">
+                ${rb.room_label}
+              </button>
+            </td>
+            <td>
+              ${(rb.effective_items && rb.effective_items.length > 0)
+                ? rb.effective_items.map(it => `<span class="badge ${it.scope === 'all' ? 'bg-success' : 'bg-warning text-dark'} me-1 mb-1">${it.number}</span>`).join('')
+                : '<span class="text-muted small">- ยังไม่ออกเลข -</span>'}
+            </td>
+            <td class="text-end small">
+              <span class="badge bg-warning text-dark">${rb.winners_count}</span> / ${rb.cards_count}
+            </td>
+          </tr>
+        `).join('');
+      }
+
+      // ประวัติเลขที่ออก + สถิติในขอบเขตที่เลือก
+      const histBody = document.getElementById('drawnHistoryTableBody');
+      if (data.drawn_history && data.drawn_history.length > 0) {
+        histBody.innerHTML = data.drawn_history.slice().reverse().map(d => `
+          <tr>
+            <td class="small text-muted">${d.order}</td>
+            <td><span class="badge ${d.target_room_code === 'all' ? 'bg-success' : 'bg-warning text-dark'} fs-6">${d.number}</span></td>
+            <td class="small fw-semibold">${d.target_room_label}</td>
+            <td class="small">${d.mode_display}</td>
+            <td class="small"><span class="badge bg-info text-dark">${d.hit_count} / ${d.eligible_cards_count} คน (${d.hit_percent}%)</span></td>
+            <td class="small text-muted">${d.time}</td>
+          </tr>
+        `).join('');
+      } else {
+        histBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3 small">ยังไม่มีเลขที่ออกในขอบเขตนี้</td></tr>';
+      }
+
+      // ผู้ชนะแยกตามห้อง
+      const winBoard = document.getElementById('winnersByRoomBoard');
+      if (data.winners_by_room && Object.keys(data.winners_by_room).length > 0) {
+        let html = '<div class="row g-2">';
+        for (const [rLabel, wList] of Object.entries(data.winners_by_room)) {
+          html += `
+            <div class="col-md-6">
+              <div class="border rounded-3 p-2 bg-light h-100">
+                <div class="fw-bold text-primary border-bottom pb-1 mb-2 d-flex justify-content-between">
+                  <span><i class="bi bi-door-open-fill me-1"></i>ห้อง ${rLabel}</span>
+                  <span class="badge bg-success">ชนะแล้ว ${wList.length} คน</span>
+                </div>
+                ${wList.map(w => `
+                  <div class="d-flex align-items-center justify-content-between py-1 border-bottom border-white">
+                    <div>
+                      <span class="badge bg-warning text-dark me-1">#${w.room_rank}</span>
+                      <b style="font-size:0.78rem;">${w.name}</b>
+                      <div class="text-muted" style="font-size:0.68rem;">${w.pattern} (เลข ${w.winning_number})</div>
+                    </div>
+                    <span class="badge bg-success">+${w.score_awarded}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>`;
+        }
+        html += '</div>';
+        winBoard.innerHTML = html;
+      } else {
+        winBoard.innerHTML = '<div class="text-center text-muted py-3">ยังไม่มีผู้ชนะในขอบเขตนี้</div>';
+      }
+
+      const pickerBox = document.getElementById('activePickerStatusBox');
+      const pickerEvtEl = document.getElementById('lastPickerEventText');
+      if (pickerBox) {
+        if (data.active_picker) {
+          const accBadge = data.active_picker.accepted
+            ? '<span class="badge bg-success ms-1">กดรับสิทธิ์แล้ว</span>'
+            : '<span class="badge bg-warning text-dark ms-1">รอนักเรียนกดรับสิทธิ์</span>';
+          pickerBox.innerHTML = `<span class="text-success"><i class="bi bi-broadcast me-1"></i>ผู้มีสิทธิ์ปัจจุบัน: <b>${data.active_picker.room_display} เลขที่ ${data.active_picker.class_number} ${data.active_picker.name}</b> ${accBadge}</span>`;
+        } else {
+          pickerBox.innerHTML = '<span class="text-muted">ยังไม่มีนักเรียนที่ได้รับสิทธิ์ในขณะนี้</span>';
+        }
+      }
+      if (pickerEvtEl && typeof data.last_picker_event !== 'undefined') {
+        pickerEvtEl.innerText = data.last_picker_event || '';
+      }
+    });
+}
+
+function grantStudentPicker() {
+  const rc = document.getElementById('pickerRoomCodeSelect')?.value || '';
+  const noVal = (document.getElementById('pickerClassNumberInput')?.value || '').trim();
+  const quickId = document.getElementById('pickerStudentQuickSelect')?.value || '';
+  if (!noVal && !quickId) {
+    return alert('กรุณาระบุเลขที่นักเรียน หรือเลือกรายชื่อผู้มีตาราง Bingo');
+  }
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('action', 'grant');
+  if (quickId && !noVal) {
+    fd.append('student_id', quickId);
+  } else {
+    fd.append('room_code', rc);
+    fd.append('class_number', noVal);
+  }
+  fetch(`/api/bingo/${ROOM_ID}/grant-picker/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return alert(data.error || 'ไม่สามารถให้สิทธิ์ได้');
+      const evtEl = document.getElementById('lastPickerEventText');
+      if (evtEl) evtEl.innerText = data.message || '';
+      refreshControlState();
+    });
+}
+
+function onQuickPickerSelect(sel) {
+  if (!sel.value) return;
+  document.getElementById('pickerClassNumberInput').value = '';
+  grantStudentPicker();
+}
+
+function revokeStudentPicker() {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('action', 'revoke');
+  fetch(`/api/bingo/${ROOM_ID}/grant-picker/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(() => refreshControlState());
+}
+
+markChips(drawnList, drawnScopeMap);
+syncPickerRoomFilter(currentRoomFilter);
+setInterval(refreshControlState, 3500);
+</script>
+{% endblock %}

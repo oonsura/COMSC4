@@ -1,0 +1,627 @@
+{% extends 'base.html' %}
+{% block title %}เล่นเกม Bingo: {{ room.title }}{% endblock %}
+{% block page_header %}{{ room.title }} · {{ room.size }}×{{ room.size }} · ช่วงเลข {{ room.number_range }}{% endblock %}
+{% block extra_css %}
+<style>
+  .bingo-board {
+    display: grid;
+    grid-template-columns: repeat({{ room.size }}, 1fr);
+    gap: {% if room.size >= 7 %}6px{% else %}10px{% endif %};
+    max-width: {% if room.size >= 7 %}600px{% else %}480px{% endif %};
+    margin: 0 auto;
+  }
+  .bingo-cell {
+    aspect-ratio: 1 / 1;
+    border-radius: {% if room.size >= 7 %}8px{% else %}14px{% endif %};
+    background: #fff;
+    border: 3px solid #cbd5e1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: {% if room.size >= 8 %}1rem{% elif room.size >= 6 %}1.2rem{% else %}1.55rem{% endif %};
+    font-weight: 800;
+    color: #1e293b;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.16s;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.06);
+    user-select: none;
+  }
+  .bingo-cell:hover { transform: translateY(-2px); border-color: #3b82f6; }
+  .bingo-cell.cell-special {
+    border: 3.5px solid #7c3aed !important;
+    background: #faf5ff;
+  }
+  .bingo-cell.drag-over {
+    border-color: #2563eb !important;
+    background: #eff6ff !important;
+    transform: scale(1.03);
+  }
+  .bingo-cell.cell-empty-slot {
+    border-style: dashed;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .bingo-cell.cell-special.cell-empty-slot {
+    border-style: dashed;
+    border-color: #7c3aed !important;
+    background: #faf5ff;
+  }
+  .bingo-num-val {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  .bingo-cell.cell-marked .bingo-num-val {
+    width: 78%;
+    height: 78%;
+    border: 5px solid #dc2626;
+    border-radius: 50%;
+    color: #b91c1c;
+    background: rgba(254, 226, 226, 0.35);
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.16);
+  }
+  .bingo-pool-box {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    padding: 0.75rem;
+  }
+  .bingo-pool-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .bingo-chip {
+    min-width: 42px;
+    height: 38px;
+    padding: 0 8px;
+    border-radius: 8px;
+    background: #fff;
+    border: 2px solid #2563eb;
+    color: #1e3a8a;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    user-select: none;
+  }
+  .bingo-chip.is-selected {
+    background: #2563eb;
+    color: #fff;
+  }
+  .bingo-chip.is-used {
+    opacity: 0.35;
+    border-color: #cbd5e1;
+    color: #64748b;
+    cursor: not-allowed;
+    text-decoration: line-through;
+  }
+  .bingo-cell.cell-pickable {
+    border-color: #16a34a !important;
+    background: #f0fdf4;
+    box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
+  }
+  .bingo-cell.cell-pickable:hover {
+    background: #dcfce7;
+  }
+</style>
+{% endblock %}
+{% block content %}
+{% if my_win %}
+<div class="alert alert-success border-3 border-success shadow-sm d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="fw-bold mb-1"><i class="bi bi-trophy-fill text-warning me-2"></i>ยินดีด้วย! คุณ Bingo แล้ว!</h5>
+    <div class="small">ห้อง {{ user.room_display }} อันดับที่ <b>#{{ my_win.room_rank_order }}</b> (อันดับรวม #{{ my_win.rank_order }}) · รูปแบบ: <b>{{ my_win.win_pattern }}</b> · ได้รับ <b>+{{ my_win.score_awarded }} คะแนน</b></div>
+  </div>
+  <span class="badge bg-warning text-dark fs-5">BINGO!</span>
+</div>
+{% endif %}
+
+<div class="row g-4">
+  <!-- ฝั่งซ้าย: ตาราง Bingo ของนักเรียน & โหมดนักเรียนกดเลือกเลข -->
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span>
+          <i class="bi bi-grid-3x3-gap-fill text-success me-2"></i>
+          ตาราง Bingo {{ room.size }}×{{ room.size }} ของ {{ user.get_full_name }} ({{ user.room_display }})
+        </span>
+        <div>
+          {% if room.is_grade_wide %}
+            <span class="badge bg-primary me-1">เล่นพร้อมกันทั้งระดับ</span>
+          {% endif %}
+          {% if card %}
+            <span class="badge bg-success"><i class="bi bi-lock-fill me-1"></i>ยืนยันตารางแล้ว</span>
+          {% else %}
+            <span class="badge bg-warning text-dark">กรุณากดยืนยันตารางก่อนเริ่ม</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info small py-2 mb-3">
+          <div><i class="bi bi-info-circle-fill me-1"></i><b>กติกาการวางเลข &amp; เล่นเกม Bingo:</b></div>
+          <ul class="mb-0 ps-3">
+            <li>ช่องที่มี <b>กรอบสีม่วง</b> คือตำแหน่งพิเศษตามเงื่อนไขของห้อง · {{ room.get_special_corner_center_rule_display }}</li>
+            <li>{% if not card %}ลากตัวเลขจากคลังด้านล่างไปวางในช่องตารางให้ครบ {{ total_cells }} ช่อง แล้วกด <b>ยืนยันและบันทึกตาราง</b>{% else %}ตัวเลขที่ออกแล้วจะมี <b>วงกลมสีแดงหนา</b> ล้อมรอบ · เลือกเลขได้เฉพาะเมื่อครูเปิดสิทธิ์ให้ในรอบนั้น{% endif %}</li>
+          </ul>
+        </div>
+
+        {% if card %}
+        <div id="studentPickerTurnBox" class="alert {% if is_my_pick_turn %}{% if active_picker_accepted %}alert-success border-2 border-success{% else %}alert-warning border-2 border-primary{% endif %}{% else %}d-none{% endif %} py-2 px-3 small mb-3">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div id="studentPickerTurnText">
+              {% if is_my_pick_turn and not active_picker_accepted %}
+                <i class="bi bi-award-fill text-primary me-1"></i><b>ครูมอบสิทธิ์ออกเลขในรอบนี้ให้คุณแล้ว!</b> กรุณากดปุ่ม <b>กดรับสิทธิ์ออกเลข</b> เพื่อปลดล็อกตัวเลขที่เลือกได้
+              {% elif is_my_pick_turn and active_picker_accepted %}
+                <i class="bi bi-hand-index-thumb-fill me-1"></i><b>คุณรับสิทธิ์ออกเลขแล้ว!</b> คลิกเลขที่ขอบสีเขียวบนตาราง (ห้ามมุม/กลาง/ทำให้ Bingo ทันที)
+              {% endif %}
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" id="btnStudentAcceptPick"
+                      class="btn btn-sm btn-primary fw-bold {% if not is_my_pick_turn or active_picker_accepted %}d-none{% endif %}"
+                      onclick="acceptStudentPickTurn()">
+                <i class="bi bi-check2-square me-1"></i>กดรับสิทธิ์ออกเลข
+              </button>
+              <button type="button" id="btnStudentForfeitPick"
+                      class="btn btn-sm btn-danger fw-bold {% if not is_my_pick_turn or not active_picker_accepted %}d-none{% endif %}"
+                      onclick="forfeitStudentPick()">
+                <i class="bi bi-x-circle me-1"></i>สละสิทธิ์ออกเลข
+              </button>
+            </div>
+          </div>
+          <div id="studentValidPicksHint" class="mt-2 pt-2 border-top {% if not is_my_pick_turn or not active_picker_accepted %}d-none{% endif %}"></div>
+        </div>
+        {% endif %}
+
+        <div id="studentPickAlert" class="alert d-none py-2 small"></div>
+
+        <!-- กระดาน Bingo -->
+        <div class="bingo-board mb-3" id="bingoBoardGrid">
+        </div>
+
+        {% if not card %}
+        <!-- โหมดนักเรียนเลือกตัวเลขเองแบบ Drag & Drop -->
+        <div class="bingo-pool-box mb-3">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <span class="small fw-bold text-primary">
+              <i class="bi bi-hand-index-thumb-fill me-1"></i>คลังตัวเลขให้เลือก ({{ min_num }}–{{ max_num }}) — ลากไปวางในช่อง หรือคลิกเลขแล้วคลิกช่อง
+            </span>
+            <span class="badge bg-dark" id="filledCellsCounter">ใส่แล้ว 0/{{ total_cells }} ช่อง</span>
+          </div>
+          <div class="bingo-pool-chips mb-2" id="bingoPoolChips"></div>
+          <div class="small text-muted">หมายเหตุ: ดับเบิลคลิกที่ช่องบนตารางเพื่อนำตัวเลขกลับคืนสู่คลัง หรือสลับเลขระหว่างช่องได้</div>
+        </div>
+
+        <form method="post" id="manualCardSubmitForm" onsubmit="return prepareManualCardSubmit(event)">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="manual_create_card">
+          <div id="manualCellHiddenInputs"></div>
+          <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+            <div class="d-flex flex-wrap gap-2">
+              <button type="button" class="btn btn-outline-primary btn-sm fw-bold" onclick="autoFillRemainingCells()">
+                <i class="bi bi-magic me-1"></i>สุ่มเติมช่องที่เหลือให้เต็ม
+              </button>
+              <button type="button" class="btn btn-outline-danger btn-sm fw-bold" onclick="clearDraftBoard()">
+                <i class="bi bi-eraser me-1"></i>ล้างตาราง
+              </button>
+            </div>
+            <button type="submit" class="btn btn-success fw-bold px-4 shadow-sm">
+              <i class="bi bi-check2-circle me-1"></i>ยืนยันและบันทึกตาราง Bingo ({{ room.size }}×{{ room.size }})
+            </button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ฝั่งขวา: สถานะเลขที่ออกล่าสุดแบบ Real-time & ผู้ชนะแยกตามห้อง -->
+  <div class="col-lg-5">
+    <div class="card mb-3 text-center">
+      <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-broadcast text-warning me-2"></i>หมายเลขที่ออกล่าสุด ({{ user.room_display }})</span>
+        <span class="badge bg-warning text-dark" id="liveCountBadge">ออกแล้ว 0 เลข</span>
+      </div>
+      <div class="card-body">
+        <div class="d-flex justify-content-center align-items-center mb-2">
+          <div id="latestBallBox" class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white shadow"
+               style="width:105px;height:105px;font-size:2.6rem;background:radial-gradient(circle,#ef4444,#991b1b);border:4px solid #fde047;">
+            -
+          </div>
+        </div>
+        <div class="small text-muted mb-2" id="latestModeText">รอการออกหมายเลข...</div>
+        <div class="d-flex flex-wrap gap-1 justify-content-center" id="drawnHistoryPills"></div>
+        <div class="mt-2 small d-flex flex-wrap justify-content-center gap-2">
+          <span class="badge bg-success">สีเขียว = ออกทั้งระดับ</span>
+          <span class="badge bg-warning text-dark">สีเหลือง = ออกเฉพาะห้อง</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="bi bi-trophy-fill text-warning me-2"></i>ทำเนียบผู้ชนะ Bingo แยกตามห้อง (Real-time)</div>
+      <div class="card-body" id="studentWinnersByRoomBox">
+        {% if winners_by_room %}
+          {% for room_label, w_list in winners_by_room %}
+          <div class="border rounded-3 p-2 mb-2 {% if room_label == user.room_display %}bg-warning-subtle border-warning{% else %}bg-light{% endif %}">
+            <div class="fw-bold small text-primary mb-1">ห้อง {{ room_label }} (ชนะแล้ว {{ w_list|length }} คน)</div>
+            {% for w in w_list %}
+            <div class="d-flex justify-content-between align-items-center small py-1 border-top">
+              <span><span class="badge bg-warning text-dark me-1">#{{ w.room_rank_order }}</span><b>{{ w.student.get_full_name }}</b> <span class="text-muted">({{ w.win_pattern }})</span></span>
+              <span class="badge bg-success">+{{ w.score_awarded }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center text-muted py-3">ยังไม่มีผู้ชนะในรอบนี้ — เล่นต่อเนื่องจนกว่าครูจะเริ่มใหม่</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const ROOM_ID = {{ room.id }};
+const MY_ROOM_CODE = '{{ my_room_code|escapejs }}';
+const MY_ROOM_DISPLAY = '{{ user.room_display|escapejs }}';
+const CSRF_TOKEN = '{{ csrf_token }}';
+const TOTAL_CELLS = {{ total_cells }};
+let GRID_NUMS = {{ grid_json|safe }};
+const POOL_NUMS = {{ pool_json|safe }};
+let drawnNumbers = new Set({{ drawn_json|safe }});
+let drawnScopeMap = {{ drawn_scope_json|safe }};
+const CORNERS = new Set({{ corners_json|safe }});
+const CENTERS = new Set({{ centers_json|safe }});
+const HAS_CARD = {{ card|yesno:"true,false" }};
+const SPECIAL_RULE = '{{ room.special_corner_center_rule|escapejs }}';
+let IS_MY_PICK_TURN = {{ is_my_pick_turn|yesno:"true,false" }};
+let ACTIVE_PICKER_ACCEPTED = {{ active_picker_accepted|yesno:"true,false" }};
+let MY_VALID_PICK_SET = new Set({{ my_valid_pick_numbers_json|safe }});
+
+let selectedChipNum = null;
+let dragPayload = null; // { source: 'pool'|'cell', number, fromIdx }
+
+function isSpecialIdx(idx) {
+  return CORNERS.has(idx) || CENTERS.has(idx);
+}
+
+function renderPoolChips() {
+  const poolEl = document.getElementById('bingoPoolChips');
+  const cntBadge = document.getElementById('filledCellsCounter');
+  if (!poolEl) return;
+  const used = new Set(GRID_NUMS.filter(x => x !== null && x !== undefined));
+  if (cntBadge) cntBadge.innerText = `ใส่แล้ว ${used.size}/${TOTAL_CELLS} ช่อง`;
+
+  poolEl.innerHTML = '';
+  POOL_NUMS.forEach(num => {
+    const chip = document.createElement('div');
+    const isUsed = used.has(num);
+    const isSel = selectedChipNum === num && !isUsed;
+    chip.className = 'bingo-chip' + (isUsed ? ' is-used' : '') + (isSel ? ' is-selected' : '');
+    chip.innerText = num;
+    chip.draggable = !isUsed;
+    if (!isUsed) {
+      chip.addEventListener('dragstart', ev => {
+        dragPayload = { source: 'pool', number: num, fromIdx: null };
+        if (ev.dataTransfer) {
+          ev.dataTransfer.effectAllowed = 'move';
+          ev.dataTransfer.setData('text/plain', String(num));
+        }
+      });
+      chip.addEventListener('click', () => {
+        selectedChipNum = (selectedChipNum === num) ? null : num;
+        renderPoolChips();
+      });
+    }
+    poolEl.appendChild(chip);
+  });
+}
+
+function renderBingoBoard() {
+  const board = document.getElementById('bingoBoardGrid');
+  board.innerHTML = '';
+  GRID_NUMS.forEach((num, idx) => {
+    const cell = document.createElement('div');
+    const isSpec = isSpecialIdx(idx);
+    const hasNum = (num !== null && num !== undefined);
+    const isMarked = hasNum && drawnNumbers.has(num);
+
+    const isPickable = HAS_CARD && IS_MY_PICK_TURN && ACTIVE_PICKER_ACCEPTED && hasNum && !isMarked && MY_VALID_PICK_SET.has(num);
+
+    cell.className = 'bingo-cell'
+      + (isSpec ? ' cell-special' : '')
+      + (!hasNum ? ' cell-empty-slot' : '')
+      + (isMarked ? ' cell-marked' : '')
+      + (isPickable ? ' cell-pickable' : '');
+
+    cell.innerHTML = hasNum
+      ? `<span class="bingo-num-val">${num}</span>`
+      : `<span class="bingo-num-val">+</span>`;
+
+    if (!HAS_CARD) {
+      if (hasNum) {
+        cell.draggable = true;
+        cell.addEventListener('dragstart', ev => {
+          dragPayload = { source: 'cell', number: num, fromIdx: idx };
+          if (ev.dataTransfer) {
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', String(num));
+          }
+        });
+        cell.addEventListener('dblclick', () => {
+          GRID_NUMS[idx] = null;
+          renderBingoBoard();
+        });
+      }
+      cell.addEventListener('dragover', ev => {
+        ev.preventDefault();
+        cell.classList.add('drag-over');
+      });
+      cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
+      cell.addEventListener('drop', ev => {
+        ev.preventDefault();
+        cell.classList.remove('drag-over');
+        if (!dragPayload) return;
+        const incoming = dragPayload.number;
+        const prev = GRID_NUMS[idx];
+        if (dragPayload.source === 'cell' && dragPayload.fromIdx !== null) {
+          GRID_NUMS[dragPayload.fromIdx] = prev;
+          GRID_NUMS[idx] = incoming;
+        } else {
+          const oldIdx = GRID_NUMS.indexOf(incoming);
+          if (oldIdx !== -1) GRID_NUMS[oldIdx] = null;
+          GRID_NUMS[idx] = incoming;
+        }
+        dragPayload = null;
+        selectedChipNum = null;
+        renderBingoBoard();
+      });
+      cell.addEventListener('click', () => {
+        if (selectedChipNum !== null) {
+          const oldIdx = GRID_NUMS.indexOf(selectedChipNum);
+          if (oldIdx !== -1) GRID_NUMS[oldIdx] = null;
+          GRID_NUMS[idx] = selectedChipNum;
+          selectedChipNum = null;
+          renderBingoBoard();
+        } else if (hasNum) {
+          GRID_NUMS[idx] = null;
+          renderBingoBoard();
+        }
+      });
+    } else {
+      cell.addEventListener('click', () => studentPickNumber(num));
+    }
+
+    board.appendChild(cell);
+  });
+  renderPoolChips();
+}
+
+function clearDraftBoard() {
+  GRID_NUMS = Array(TOTAL_CELLS).fill(null);
+  selectedChipNum = null;
+  renderBingoBoard();
+}
+
+function autoFillRemainingCells() {
+  const used = new Set(GRID_NUMS.filter(x => x !== null && x !== undefined));
+  let avail = POOL_NUMS.filter(n => !used.has(n));
+  for (let i = avail.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [avail[i], avail[j]] = [avail[j], avail[i]];
+  }
+  if (SPECIAL_RULE === 'even_corners_odd_center') {
+    for (let i = 0; i < TOTAL_CELLS; i++) {
+      if (GRID_NUMS[i] !== null && GRID_NUMS[i] !== undefined) continue;
+      if (CORNERS.has(i)) {
+        const k = avail.findIndex(v => v % 2 === 0);
+        if (k !== -1) GRID_NUMS[i] = avail.splice(k, 1)[0];
+      } else if (CENTERS.has(i)) {
+        const k = avail.findIndex(v => v % 2 !== 0);
+        if (k !== -1) GRID_NUMS[i] = avail.splice(k, 1)[0];
+      }
+    }
+  }
+  for (let i = 0; i < TOTAL_CELLS; i++) {
+    if (GRID_NUMS[i] === null || GRID_NUMS[i] === undefined) {
+      if (avail.length > 0) GRID_NUMS[i] = avail.shift();
+    }
+  }
+  renderBingoBoard();
+}
+
+function prepareManualCardSubmit(ev) {
+  const missing = GRID_NUMS.filter(x => x === null || x === undefined).length;
+  if (missing > 0) {
+    ev.preventDefault();
+    showPickAlert(`กรุณาลากตัวเลขใส่ให้ครบทุกช่องก่อนยืนยัน (ยังขาด ${missing} ช่อง หรือกดปุ่ม "สุ่มเติมช่องที่เหลือให้เต็ม")`, 'warning');
+    return false;
+  }
+  const holder = document.getElementById('manualCellHiddenInputs');
+  holder.innerHTML = GRID_NUMS.map(n => `<input type="hidden" name="cell_num" value="${n}">`).join('');
+  return true;
+}
+
+function showPickAlert(msg, type) {
+  const el = document.getElementById('studentPickAlert');
+  el.className = `alert alert-${type} py-2 small fw-semibold`;
+  el.innerHTML = msg;
+  el.classList.remove('d-none');
+}
+
+function renderPickerTurnBanner(data) {
+  const box = document.getElementById('studentPickerTurnBox');
+  const txt = document.getElementById('studentPickerTurnText');
+  const btnAccept = document.getElementById('btnStudentAcceptPick');
+  const btnForfeit = document.getElementById('btnStudentForfeitPick');
+  const hint = document.getElementById('studentValidPicksHint');
+  if (!box || !txt) return;
+
+  if (IS_MY_PICK_TURN && !ACTIVE_PICKER_ACCEPTED) {
+    box.className = 'alert alert-warning border-2 border-primary py-2 px-3 small mb-3';
+    txt.innerHTML = '<i class="bi bi-award-fill text-primary me-1"></i><b>ครูมอบสิทธิ์ออกเลขในรอบนี้ให้คุณแล้ว!</b> กรุณากดปุ่ม <b>กดรับสิทธิ์ออกเลข</b> เพื่อปลดล็อกตัวเลขที่เลือกได้';
+    if (btnAccept) btnAccept.classList.remove('d-none');
+    if (btnForfeit) btnForfeit.classList.add('d-none');
+    if (hint) { hint.classList.add('d-none'); hint.innerHTML = ''; }
+    return;
+  }
+
+  if (IS_MY_PICK_TURN && ACTIVE_PICKER_ACCEPTED) {
+    const validArr = Array.from(MY_VALID_PICK_SET).sort((a, b) => a - b);
+    box.className = validArr.length === 0
+      ? 'alert alert-warning border-2 border-danger py-2 px-3 small mb-3'
+      : 'alert alert-success border-2 border-success py-2 px-3 small mb-3';
+    if (btnAccept) btnAccept.classList.add('d-none');
+    if (btnForfeit) btnForfeit.classList.remove('d-none');
+    if (validArr.length === 0) {
+      txt.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-danger me-1"></i><b>ไม่มีตัวเลขที่เลือกได้ตามกติกา</b> (ทุกเลขที่เหลืออยู่มุม/กลาง หรือจะทำให้คุณ Bingo ทันที) กรุณากดปุ่ม <b>สละสิทธิ์ออกเลข</b>';
+      if (hint) { hint.classList.add('d-none'); hint.innerHTML = ''; }
+    } else {
+      txt.innerHTML = '<i class="bi bi-hand-index-thumb-fill me-1"></i><b>คุณรับสิทธิ์ออกเลขแล้ว!</b> คลิกเลขที่ขอบสีเขียวบนตารางหรือกดปุ่มด้านล่าง';
+      if (hint) {
+        hint.classList.remove('d-none');
+        hint.innerHTML = '<span class="fw-bold me-1">เลขที่เลือกได้:</span>' + validArr.map(n =>
+          `<button type="button" class="btn btn-xs btn-outline-success fw-bold py-0 px-2 me-1 mb-1" onclick="studentPickNumber(${n})">${n}</button>`
+        ).join('');
+      }
+    }
+  } else {
+    box.className = 'alert d-none py-2 px-3 small mb-3';
+    if (btnAccept) btnAccept.classList.add('d-none');
+    if (btnForfeit) btnForfeit.classList.add('d-none');
+    if (hint) { hint.classList.add('d-none'); hint.innerHTML = ''; }
+    txt.innerHTML = '';
+  }
+}
+
+function acceptStudentPickTurn() {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fetch(`/api/bingo/${ROOM_ID}/student-accept/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        ACTIVE_PICKER_ACCEPTED = true;
+        IS_MY_PICK_TURN = true;
+        MY_VALID_PICK_SET = new Set(data.my_valid_pick_numbers || []);
+        showPickAlert(`<i class="bi bi-check-circle-fill me-1"></i>${data.message}`, 'success');
+        pollBingoState();
+      } else {
+        showPickAlert(`<i class="bi bi-shield-exclamation me-1"></i>${data.error}`, 'danger');
+      }
+    });
+}
+
+function forfeitStudentPick() {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fetch(`/api/bingo/${ROOM_ID}/student-forfeit/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        IS_MY_PICK_TURN = false;
+        ACTIVE_PICKER_ACCEPTED = false;
+        MY_VALID_PICK_SET = new Set();
+        showPickAlert(`<i class="bi bi-check-circle-fill me-1"></i>${data.message}`, 'info');
+        pollBingoState();
+      } else {
+        showPickAlert(`<i class="bi bi-shield-exclamation me-1"></i>${data.error}`, 'danger');
+      }
+    });
+}
+
+function studentPickNumber(num) {
+  if (!HAS_CARD) {
+    showPickAlert('กรุณาลากตัวเลขใส่ให้ครบแล้วกดยืนยันตาราง Bingo ก่อนเล่น', 'warning');
+    return;
+  }
+  if (!IS_MY_PICK_TURN) {
+    return;
+  }
+  if (!ACTIVE_PICKER_ACCEPTED) {
+    showPickAlert('<i class="bi bi-hand-index-thumb me-1"></i>กรุณากดปุ่ม "กดรับสิทธิ์ออกเลข" ก่อนเลือกตัวเลขบนตาราง', 'info');
+    return;
+  }
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('number', num);
+
+  fetch(`/api/bingo/${ROOM_ID}/student-pick/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        IS_MY_PICK_TURN = false;
+        ACTIVE_PICKER_ACCEPTED = false;
+        MY_VALID_PICK_SET = new Set();
+        showPickAlert(`<i class="bi bi-check-circle-fill me-1"></i>${data.message}`, 'success');
+        pollBingoState();
+      } else {
+        showPickAlert(`<i class="bi bi-shield-exclamation me-1"></i>${data.error}`, 'danger');
+      }
+    });
+}
+
+function pollBingoState() {
+  fetch(`/api/bingo/${ROOM_ID}/state/?room_filter=${encodeURIComponent(MY_ROOM_CODE)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      drawnNumbers = new Set(data.drawn_numbers);
+      drawnScopeMap = data.drawn_scope_map || {};
+      IS_MY_PICK_TURN = !!data.is_my_pick_turn;
+      ACTIVE_PICKER_ACCEPTED = !!data.active_picker_accepted;
+      MY_VALID_PICK_SET = new Set(data.my_valid_pick_numbers || []);
+      renderPickerTurnBanner(data);
+      renderBingoBoard();
+
+      document.getElementById('liveCountBadge').innerText = `ออกแล้ว ${data.drawn_numbers.length} เลข`;
+      document.getElementById('latestBallBox').innerText = data.last_number !== null ? data.last_number : '-';
+      if (data.last_number !== null) {
+        document.getElementById('latestModeText').innerText =
+          `ออกโดย: ${data.last_mode}` + (data.last_picker ? ` (${data.last_picker})` : '');
+      }
+
+      const pillsEl = document.getElementById('drawnHistoryPills');
+      pillsEl.innerHTML = data.drawn_numbers.map(n => {
+        const sc = drawnScopeMap[String(n)] || 'all';
+        const cls = sc === 'all' ? 'bg-success' : 'bg-warning text-dark';
+        return `<span class="badge ${cls} fs-6">${n}</span>`;
+      }).join('');
+
+      if (data.winners_by_room && Object.keys(data.winners_by_room).length > 0) {
+        const entries = Object.entries(data.winners_by_room).sort((a, b) => {
+          if (a[0] === MY_ROOM_DISPLAY) return -1;
+          if (b[0] === MY_ROOM_DISPLAY) return 1;
+          return 0;
+        });
+        document.getElementById('studentWinnersByRoomBox').innerHTML = entries.map(([rLabel, wList]) => `
+          <div class="border rounded-3 p-2 mb-2 ${rLabel === MY_ROOM_DISPLAY ? 'bg-warning-subtle border-warning' : 'bg-light'}">
+            <div class="fw-bold small text-primary mb-1">ห้อง ${rLabel} (ชนะแล้ว ${wList.length} คน)</div>
+            ${wList.map(w => `
+              <div class="d-flex justify-content-between align-items-center small py-1 border-top">
+                <span><span class="badge bg-warning text-dark me-1">#${w.room_rank}</span><b>${w.name}</b> <span class="text-muted">(${w.pattern})</span></span>
+                <span class="badge bg-success">+${w.score_awarded}</span>
+              </div>
+            `).join('')}
+          </div>
+        `).join('');
+      }
+    });
+}
+
+renderPickerTurnBanner(null);
+renderBingoBoard();
+pollBingoState();
+setInterval(pollBingoState, 3000);
+</script>
+{% endblock %}

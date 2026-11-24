@@ -1,0 +1,3305 @@
+{% extends 'base.html' %}
+{% load comsc4_tags %}
+{% block title %}เช็คชื่อ &amp; แผนผังที่นั่ง - COMSC4{% endblock %}
+{% block page_header %}เช็คชื่อ แผนผังที่นั่ง &amp; เช็คหนังสือ/สมุด{% endblock %}
+{% block extra_css %}
+<style>
+  /* Compact page-scoped framing: single-screen zero-scrollbar */
+  .topbar {
+    padding: 0.35rem 1rem !important;
+    min-height: 44px;
+  }
+  .content-area {
+    padding: 0.4rem 0.6rem !important;
+  }
+  .content-area > .alert {
+    padding: 0.28rem 0.7rem;
+    margin-bottom: 0.3rem;
+    font-size: 0.78rem;
+  }
+  body.seating-fullscreen .sidebar {
+    transform: translateX(-100%) !important;
+  }
+  body.seating-fullscreen .main-content {
+    margin-left: 0 !important;
+  }
+
+  /* Slim Top Control Bar */
+  .seating-topbar {
+    background: var(--checkin-box-bg, #ecfdf5);
+    border: 1px solid #86efac;
+    border-left: 4px solid #16a34a;
+    border-radius: 10px;
+    padding: 0.28rem 0.5rem;
+    margin-bottom: 0.3rem;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+  }
+  .seating-topbar .form-select-sm,
+  .seating-topbar .form-control-sm,
+  .seating-topbar .btn-sm {
+    font-size: 0.75rem;
+    padding: 0.14rem 0.42rem;
+    line-height: 1.3;
+  }
+  .seating-tabs-mini .nav-link {
+    padding: 0.16rem 0.52rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    border-radius: 6px;
+    color: #334155;
+  }
+  .seating-tabs-mini .nav-link.active {
+    background: #0f4c5c;
+    color: #fff;
+  }
+
+  /* Viewport-fitted Stage */
+  .seating-stage {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 320px;
+  }
+  .seating-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .seating-panel-card {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+  }
+
+  .seating-subbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.32rem;
+    padding: 0.26rem 0.5rem;
+    background: #dcfce7;
+    border-bottom: 1px solid #86efac;
+    flex-shrink: 0;
+  }
+  .seating-subbar .btn-sm,
+  .seating-subbar .form-select-sm,
+  .seating-subbar .form-control-sm {
+    font-size: 0.73rem;
+    padding: 0.13rem 0.4rem;
+    line-height: 1.25;
+  }
+  .seating-subbar-row2 {
+    background: #f1f5f9;
+    padding: 0.22rem 0.5rem;
+  }
+  .seat-toast-inline {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
+    border-radius: 6px;
+    max-width: 340px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .blackboard-bar {
+    background: #1e293b;
+    color: #facc15;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.72rem;
+    line-height: 20px;
+    height: 22px;
+    border-radius: 5px;
+    border: 1px solid #eab308;
+    flex-shrink: 0;
+  }
+
+  .live-workspace-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 6px;
+    padding: 4px 6px;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  .seat-grid-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .seat-grid-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .seat-grid-area.grid-scroll-fallback {
+    overflow: auto;
+  }
+  .seat-grid-matrix {
+    display: grid;
+    grid-template-columns: 22px repeat(var(--cols), minmax(0, 114px));
+    grid-template-rows: var(--hdr-h, 20px) repeat(var(--rows), minmax(0, 50px));
+    justify-content: center;
+    align-content: center;
+    gap: 3px;
+    width: 100%;
+    height: 100%;
+  }
+  .seat-grid-area.grid-scroll-fallback .seat-grid-matrix {
+    min-width: calc(22px + var(--cols) * 86px);
+    min-height: calc(var(--hdr-h, 20px) + var(--rows) * 32px);
+  }
+  #designGridArea,
+  #labGridArea {
+    overflow: auto;
+  }
+  .design-grid-inner {
+    width: max-content;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  #designGridMatrix,
+  #labGridMatrix {
+    display: grid;
+    grid-template-columns: 24px repeat(var(--cols), max-content);
+    grid-template-rows: 22px repeat(var(--rows), max-content);
+    gap: 4px;
+    width: max-content;
+    height: max-content;
+  }
+
+  .seat-grid-corner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #64748b;
+    background: #f1f5f9;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+  }
+  .seat-col-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3px;
+    padding: 0 5px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #0f4c5c;
+    background: #e0f2fe;
+    border: 1px solid #bae6fd;
+    border-radius: 4px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .design-col-pill {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s, border-color 0.1s;
+  }
+  .design-col-pill:hover {
+    background: #bae6fd;
+  }
+  .design-col-pill.is-col-selected {
+    background: #0284c7;
+    color: #fff;
+    border-color: #0369a1;
+  }
+  .design-col-pill.is-col-selected .col-range-badge {
+    color: #e0f2fe;
+  }
+  .col-range-badge {
+    font-size: 0.61rem;
+    font-weight: 600;
+    color: #0369a1;
+    white-space: nowrap;
+  }
+  .seat-row-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #475569;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    user-select: none;
+  }
+
+  /* Live Check Compact Seat Cells */
+  .live-seat-cell {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: var(--seat-default-bg, #ffffff);
+    padding: 2px 3px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.1s, box-shadow 0.1s;
+  }
+  .live-seat-cell:hover {
+    border-color: #2563eb;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.18);
+  }
+  .live-seat-cell.seat-online {
+    background: linear-gradient(135deg, var(--seat-online-bg-1, #bbf7d0) 0%, var(--seat-online-bg-2, #86efac) 100%);
+    border: 2px solid var(--seat-online-border, #15803d);
+    box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25);
+  }
+  .live-seat-cell.seat-online .seat-st-name {
+    color: #052e16;
+  }
+  .live-seat-cell.seat-online .seat-score-mini {
+    color: #14532d;
+  }
+  .live-seat-cell.seat-checked {
+    background: var(--seat-checked-bg, #dcfce7);
+    border: 1.5px solid #22c55e;
+  }
+  .live-seat-cell.seat-empty {
+    background: var(--seat-default-bg, #ffffff);
+    border: 1px dashed #cbd5e1;
+  }
+  .live-seat-cell.seat-disabled {
+    opacity: 0.36;
+    background: var(--seat-default-bg, #ffffff);
+    border: 1px dashed #94a3b8;
+    color: #64748b;
+    cursor: default;
+    align-items: center;
+    justify-content: center;
+  }
+  .live-seat-cell.seat-disabled:hover {
+    border-color: #cbd5e1;
+    box-shadow: none;
+  }
+  .live-seat-inner {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    width: 100%;
+    gap: 2px;
+  }
+  .seat-main-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2px;
+    min-width: 0;
+  }
+  .seat-ident {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+  .seat-mc-tag {
+    font-size: 0.55rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 1px 2.5px;
+    border-radius: 3px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    flex-shrink: 0;
+  }
+  .seat-no-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 1.5px 3.5px;
+    border-radius: 3px;
+    background: #334155;
+    color: #fff;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .seat-no-pill.is-online { background: #16a34a; }
+  .seat-no-pill.is-checked { background: #2563eb; }
+  .seat-st-name {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .seat-score-mini {
+    font-size: 0.59rem;
+    font-weight: 700;
+    color: #64748b;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .seat-chk-btn {
+    width: 100%;
+    height: 22px;
+    padding: 0 4px;
+    border: 1.5px solid #94a3b8;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #1e293b;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .seat-chk-btn:hover {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+  .seat-chk-btn.is-checked-all {
+    background: #16a34a;
+    border-color: #15803d;
+    color: #fff;
+  }
+  .seat-chk-btn.is-checked-all:hover {
+    background: #15803d;
+    border-color: #166534;
+    color: #fff;
+  }
+  .seat-chk-btn.is-checked-partial {
+    background: #f59e0b;
+    border-color: #d97706;
+    color: #1e293b;
+  }
+  .online-dot {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #16a34a;
+    flex-shrink: 0;
+  }
+  .online-dot.pulse-white { background: #fff; }
+
+  .seat-density-sm .seat-chk-btn {
+    height: 19px;
+    font-size: 0.67rem;
+  }
+  .seat-density-sm .seat-st-name { font-size: 0.66rem; }
+  .seat-density-sm .seat-no-pill { font-size: 0.59rem; padding: 1px 3px; }
+  .seat-density-xs .live-seat-cell { padding: 1px 2px; }
+  .seat-density-xs .live-seat-inner { gap: 1px; }
+  .seat-density-xs .seat-chk-btn {
+    height: 17px;
+    font-size: 0.63rem;
+  }
+  .seat-density-xs .seat-st-name { font-size: 0.63rem; }
+  .seat-density-xs .seat-no-pill { font-size: 0.57rem; padding: 1px 2.5px; }
+
+  /* Snug 4px-padded Design Mode Cells (Tab 2 & Tab 3) */
+  .design-cell,
+  .lab-cell {
+    width: max-content;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+  .design-cell.is-col-focus,
+  .lab-cell.is-col-focus {
+    border-color: #38bdf8;
+    background: #f0f9ff;
+  }
+  .design-cell.is-disabled {
+    opacity: 0.36;
+    background: #f8fafc;
+    border: 1px dashed #94a3b8;
+    min-width: 72px;
+    min-height: 41px;
+  }
+  .lab-cell.is-disabled {
+    opacity: 0.36;
+    background: #f1f5f9;
+    border: 1px dashed #94a3b8;
+    cursor: pointer;
+  }
+  .lab-cell.is-disabled:hover {
+    opacity: 0.72;
+    border-color: #2563eb;
+  }
+  .lab-cell.is-disabled .design-mc-wrap {
+    pointer-events: none;
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+  }
+  .lab-cell.is-disabled .design-lbl-input {
+    color: #64748b;
+    text-decoration: line-through;
+  }
+  .lab-cell-top {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3px;
+  }
+  .lab-toggle-x-btn {
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    background: #fff;
+    color: #64748b;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .lab-toggle-x-btn:hover {
+    background: #fee2e2;
+    border-color: #ef4444;
+    color: #dc2626;
+  }
+  .lab-cell.is-disabled .lab-toggle-x-btn {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+  }
+  .design-inputs-row {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+  }
+  .design-mc-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 3px;
+    padding: 0 3px;
+    height: 19px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #92400e;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .design-mc-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 3px;
+    padding: 0 2px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+  .design-mc-prefix {
+    font-size: 0.58rem;
+    font-weight: 700;
+    color: #92400e;
+    line-height: 1;
+    user-select: none;
+  }
+  .design-lbl-input {
+    width: 28px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    padding: 0;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #78350f;
+    text-align: center;
+  }
+  .design-lbl-input:focus {
+    outline: none;
+    background: #fff;
+    border-radius: 2px;
+  }
+  .design-num-input {
+    width: 28px;
+    height: 19px;
+    flex-shrink: 0;
+    padding: 0 1px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-align: center;
+    border: 1px solid #93c5fd;
+    border-radius: 4px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-variant-numeric: tabular-nums;
+  }
+  .design-num-input:focus {
+    outline: none;
+    border-color: #2563eb;
+    background: #fff;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+  }
+  .design-num-input.is-dup {
+    border-color: #dc2626 !important;
+    background: #fef2f2 !important;
+    color: #b91c1c !important;
+  }
+  .design-cell.is-disabled .design-inputs-row {
+    display: none;
+  }
+  .design-st-name {
+    width: 66px;
+    max-width: 66px;
+    min-height: 12px;
+    font-size: 0.65rem;
+    line-height: 1.15;
+    font-weight: 600;
+    color: #0f4c5c;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .design-st-name.is-empty {
+    color: #94a3b8;
+    font-weight: 400;
+  }
+  .lab-coord-txt {
+    font-size: 0.56rem;
+    line-height: 1;
+    color: #64748b;
+    font-weight: 600;
+  }
+
+  .design-num-input::-webkit-outer-spin-button,
+  .design-num-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .design-num-input[type=number] {
+    -moz-appearance: textfield;
+  }
+
+  .design-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+    padding: 0.2rem 0.5rem;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    font-size: 0.72rem;
+    flex-shrink: 0;
+  }
+  .design-unassigned-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+    padding: 0.25rem 0.5rem;
+    background: #fffbeb;
+    border-bottom: 1px solid #fde68a;
+    font-size: 0.74rem;
+    max-height: 62px;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .design-unassigned-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+  .missing-st-chip {
+    border: 1px solid #f59e0b;
+    background: #fff;
+    color: #92400e;
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    line-height: 1.3;
+  }
+  .missing-st-chip:hover {
+    background: #fef3c7;
+    border-color: #d97706;
+  }
+  .missing-st-chip.is-selected {
+    background: #2563eb;
+    border-color: #1d4ed8;
+    color: #fff;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.22);
+  }
+  .design-cell.is-place-ready:not(.is-disabled) {
+    cursor: pointer;
+  }
+  .design-cell.is-place-ready:not(.is-disabled):hover {
+    border-color: #2563eb;
+    background: #eff6ff;
+  }
+  .classroom-select-status.is-seat-incomplete {
+    color: #dc2626 !important;
+    border-color: #dc2626 !important;
+  }
+  .classroom-select-status.is-seat-complete {
+    color: #0f172a !important;
+  }
+  .online-table-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  #designGridWrap,
+  #labGridWrap {
+    padding: 4px 6px;
+  }
+  #liveSidePanel {
+    width: 272px;
+    flex: 0 0 272px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    overflow: hidden;
+    border-left: 1px solid #e2e8f0;
+    padding-left: 6px;
+  }
+  .live-side-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .live-side-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    padding: 4px 8px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #0f172a;
+    flex-shrink: 0;
+  }
+  .live-side-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .live-side-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    padding: 3px 8px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.73rem;
+  }
+  .live-side-row:last-child {
+    border-bottom: none;
+  }
+  .live-absent-row {
+    cursor: pointer;
+    transition: background-color 0.1s;
+  }
+  .live-absent-row:hover {
+    background: #fef2f2;
+  }
+
+  @media (max-width: 991.98px) {
+    .live-workspace-body {
+      flex-direction: column;
+      overflow: auto;
+    }
+    #liveSidePanel {
+      width: 100%;
+      flex: none;
+      border-left: none;
+      border-top: 1px solid #e2e8f0;
+      padding-left: 0;
+      padding-top: 6px;
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .seating-stage {
+      height: auto !important;
+      overflow: visible !important;
+    }
+    .seating-panel,
+    .seating-panel-card,
+    .seat-grid-wrap,
+    .seat-grid-area {
+      overflow: visible !important;
+      height: auto !important;
+    }
+    .seat-grid-area { overflow-x: auto !important; }
+    #liveGridMatrix {
+      min-width: calc(22px + var(--cols) * 86px);
+      height: auto !important;
+      grid-template-rows: var(--hdr-h, 20px) repeat(var(--rows), minmax(34px, auto));
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if edit_classroom %}
+<!-- Slim Unified Top Control Bar -->
+<div class="seating-topbar d-flex flex-wrap align-items-center justify-content-between gap-2">
+  <div class="d-flex flex-wrap align-items-center gap-1">
+    <!-- เลือกห้องเรียน (4/1..4/14) -->
+    <form method="get" class="d-inline-flex align-items-center gap-1 m-0">
+      <input type="hidden" name="check_date" value="{{ check_date_str }}">
+      <input type="hidden" name="tab" class="sync-active-tab" value="{{ active_tab }}">
+      <select name="classroom_id" id="classroomSelectorSelect"
+              class="form-select form-select-sm fw-bold border-primary classroom-select-status {% if not edit_classroom.seat_is_complete %}is-seat-incomplete{% else %}is-seat-complete{% endif %}"
+              style="width:auto;" onchange="this.form.submit()" title="เลือกห้องเรียน (สีแดง=ยังจัดที่นั่งไม่ครบ, สีดำ=ครบแล้ว)">
+        {% for c in classrooms %}
+        <option value="{{ c.id }}"
+                data-base-name="{{ c.name }}"
+                style="{% if not c.seat_is_complete %}color:#dc2626;font-weight:700;{% else %}color:#0f172a;font-weight:600;{% endif %}"
+                {% if c.id == edit_classroom.id %}selected{% endif %}>{{ c.name }}{% if not c.seat_is_complete %} (ขาด {{ c.seat_missing_count }}){% endif %}</option>
+        {% endfor %}
+      </select>
+    </form>
+
+    <!-- เลือกแผนผังห้องที่ใช้เรียน (ห้อง 134 / 135 / 136 / ...) -->
+    <form method="post" class="d-inline-flex align-items-center gap-1 m-0">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="assign_classroom_lab_room">
+      <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+      {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+      <input type="hidden" name="check_date" value="{{ check_date_str }}">
+      <input type="hidden" name="tab" class="sync-active-tab" value="{{ active_tab }}">
+      <span class="small fw-bold text-secondary">ใช้แผนผัง:</span>
+      <select name="lab_room_id" class="form-select form-select-sm fw-bold border-success text-success-emphasis" style="width:auto;" onchange="this.form.submit()" title="เลือกแผนผังห้องที่ห้องเรียนนี้ใช้เรียน">
+        {% for lab in lab_rooms %}
+        <option value="{{ lab.id }}" {% if edit_classroom.lab_room_id == lab.id %}selected{% endif %}>{{ lab.name }} ({{ lab.seat_rows }}×{{ lab.seat_cols }})</option>
+        {% endfor %}
+      </select>
+    </form>
+    <button type="button" class="btn btn-sm btn-outline-success fw-bold" data-bs-toggle="modal" data-bs-target="#mapClassroomsLabModal" title="จับคู่ทุกห้องเรียนกับห้องคอมในหน้าเดียว">จับคู่ห้อง</button>
+
+    <form method="get" class="d-inline-flex align-items-center gap-1 m-0">
+      <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+      {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+      <input type="hidden" name="tab" class="sync-active-tab" value="{{ active_tab }}">
+      <input type="date" name="check_date" class="form-control form-control-sm" style="width:auto;" value="{{ check_date_str }}" onchange="this.form.submit()">
+    </form>
+
+    {% if current_session and current_session.classroom_id == edit_classroom.id %}
+      <span class="badge bg-danger">โค้ด: {{ current_session.check_in_code }}</span>
+      {% if current_session.is_open %}
+        <span class="badge bg-success" id="teacherSessionCountdownBadge">
+          <i class="bi bi-clock me-1"></i>เปิดเช็คชื่อ <span id="teacherSessionTimer">--:--</span>
+        </span>
+      {% else %}
+        <span class="badge bg-secondary" id="teacherSessionCountdownBadge">ปิดเช็คชื่อแล้ว</span>
+      {% endif %}
+    {% endif %}
+
+    <span class="badge bg-success" id="sumOnline">Login {{ seating_snapshot.summary.online_count|default:0 }}/{{ seating_snapshot.summary.total_students|default:0 }}</span>
+    <span class="badge bg-primary" id="sumBook">หนังสือ {{ seating_snapshot.summary.book_count|default:0 }}</span>
+    <span class="badge bg-warning text-dark" id="sumNotebook">สมุด {{ seating_snapshot.summary.notebook_count|default:0 }}</span>
+  </div>
+
+  <div class="d-flex flex-wrap align-items-center gap-1">
+    <ul class="nav nav-pills seating-tabs-mini bg-light p-1 rounded border m-0" role="tablist">
+      <li class="nav-item">
+        <button type="button" class="nav-link {% if active_tab != 'design' and active_tab != 'lab' and active_tab != 'online' %}active{% endif %}" id="tabBtnLive" onclick="switchSeatingTab('live')">
+          1. เช็คชื่อ / สมุด-หนังสือ
+        </button>
+      </li>
+      <li class="nav-item">
+        <button type="button" class="nav-link {% if active_tab == 'design' %}active{% endif %}" id="tabBtnDesign" onclick="switchSeatingTab('design')">
+          2. จัดที่นั่งนักเรียน
+        </button>
+      </li>
+      <li class="nav-item">
+        <button type="button" class="nav-link {% if active_tab == 'lab' %}active{% endif %}" id="tabBtnLab" onclick="switchSeatingTab('lab')">
+          3. แผนผังห้อง
+        </button>
+      </li>
+      <li class="nav-item">
+        <button type="button" class="nav-link {% if active_tab == 'online' %}active{% endif %}" id="tabBtnOnline" onclick="switchSeatingTab('online')">
+          คน Login <span class="badge bg-success ms-1" id="onlineListBadge">{{ seating_snapshot.online_students|length }}</span>
+        </button>
+      </li>
+    </ul>
+
+    {% if current_session and current_session.classroom_id == edit_classroom.id %}
+    <form method="post" class="m-0 d-inline">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="toggle_session">
+      <input type="hidden" name="session_id" value="{{ current_session.id }}">
+      <input type="hidden" name="check_date" value="{{ check_date_str }}">
+      <input type="hidden" name="tab" class="sync-active-tab" value="{{ active_tab }}">
+      <button type="submit" class="btn btn-sm {% if current_session.is_open %}btn-outline-danger{% else %}btn-success{% endif %} fw-bold">
+        {% if current_session.is_open %}<i class="bi bi-stop-circle me-1"></i>ปิดเช็คชื่อ{% else %}<i class="bi bi-play-circle me-1"></i>เปิดเช็คชื่อ (25 นาที){% endif %}
+      </button>
+    </form>
+    {% endif %}
+
+    <button type="button" class="btn btn-sm btn-outline-primary fw-bold" data-bs-toggle="offcanvas" data-bs-target="#seatingSettingsOffcanvas">
+      เปิดรอบเช็คชื่อ
+    </button>
+
+    <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" id="btnFullscreenToggle" onclick="toggleFullscreenSeating()">
+      เต็มจอ
+    </button>
+  </div>
+</div>
+
+<!-- Single-Screen Stage -->
+<div class="seating-stage" id="seatingStage">
+  <!-- ======================================================================= -->
+  <!-- แท็บ 1: เช็คชื่อ / สมุด-หนังสือ ในหน้าจอเดียว -->
+  <!-- ======================================================================= -->
+  <div id="panelLiveMode" class="seating-panel {% if active_tab == 'design' or active_tab == 'lab' or active_tab == 'online' %}d-none{% endif %}">
+    <div class="seating-panel-card">
+      <div class="seating-subbar">
+        <div class="d-flex flex-wrap align-items-center gap-3">
+          <span class="small fw-semibold text-dark">
+            {% if edit_classroom.lab_room %}<span class="badge bg-success-subtle text-success border border-success-subtle me-1">{{ edit_classroom.lab_room.name }}</span>{% endif %}
+            กดปุ่ม <b>"ตรวจสอบ"</b> = เช็คหนังสือ+สมุด (+คะแนน) · กดชื่อ = ดูรายละเอียด/ให้คะแนนเพิ่ม
+          </span>
+          <label class="form-check form-check-inline m-0 d-inline-flex align-items-center gap-1 small fw-bold text-primary" style="cursor:pointer;">
+            <input class="form-check-input m-0" type="checkbox" id="quickCheckBothToggle">
+            <span>กดการ์ด = ตรวจสอบทันที</span>
+          </label>
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+          <div id="seatCheckToast" class="seat-toast-inline d-none"></div>
+          <span class="small text-success fw-bold" style="font-size:0.72rem;"><span class="online-dot me-1"></span>อัปเดตสด</span>
+        </div>
+      </div>
+
+      <div class="live-workspace-body">
+      <div class="seat-grid-wrap" id="liveGridWrap">
+        {% if board_position == 'top' %}
+        <div class="blackboard-bar">กระดานดำ / หน้าชั้นเรียน (ด้านบน)</div>
+        {% endif %}
+
+        <div class="seat-grid-area" id="liveGridArea">
+          <div class="seat-grid-matrix" id="liveGridMatrix" style="--rows:{{ rows_range|length }};--cols:{{ cols_range|length }};--hdr-h:20px;">
+            <div class="seat-grid-corner">แถว</div>
+            {% for c in cols_range %}
+            <div class="seat-col-hdr" id="liveColHdr_{{ c }}">
+              <span>C{{ c }}</span>
+              <span class="col-range-badge" id="liveColRange_{{ c }}"></span>
+            </div>
+            {% endfor %}
+
+            {% for r in rows_range %}
+              <div class="seat-row-hdr">R{{ r }}</div>
+              {% for c in cols_range %}
+                {% seat_key r c as key %}
+                {% with seat=seating_snapshot.seats|get_item:key %}
+                {% if seat and seat.disabled %}
+                <div class="live-seat-cell seat-disabled" title="{{ seat.label }} (ไม่มีเครื่อง)">
+                  <span style="font-size:0.62rem;">ไม่มีเครื่อง</span>
+                </div>
+                {% else %}
+                <div id="liveSeatCell_{{ key }}"
+                     onclick="onSeatCardClick('{{ key }}', {{ r }}, {{ c }})"
+                     title="{% if seat.student %}{% if seat.custom_label %}เครื่อง {{ seat.custom_label }} · {% endif %}เลขที่ {{ seat.student.class_number }} {{ seat.student.name }} ({{ seat.student.student_id }}) · คะแนน {{ seat.student.total_score|floatformat:1 }}{% else %}{% if seat.custom_label %}เครื่อง {{ seat.custom_label }}{% else %}{{ seat.label }}{% endif %} · ว่าง{% endif %}"
+                     class="live-seat-cell {% if seat.student.is_online %}seat-online{% elif seat.student.is_checked_in %}seat-checked{% elif not seat.student %}seat-empty{% endif %}">
+                  <div id="liveSeatContent_{{ key }}" class="live-seat-inner">
+                    {% if seat.student %}
+                      {% with disp_no=seat.assigned_number|default:seat.student.class_number %}
+                      <div class="seat-main-row">
+                        <div class="seat-ident">
+                          {% if seat.custom_label %}<span class="seat-mc-tag" title="เครื่องที่ {{ seat.custom_label }}">{{ seat.custom_label }}</span>{% endif %}
+                          <span class="seat-no-pill {% if seat.student.is_online %}is-online{% elif seat.student.is_checked_in %}is-checked{% endif %}">{% if seat.student.is_online %}<span class="online-dot pulse-white"></span>{% endif %}{% if disp_no < 10 %}0{{ disp_no }}{% else %}{{ disp_no }}{% endif %}</span>
+                          <span class="seat-st-name">{{ seat.student.first_name }}</span>
+                        </div>
+                        <span class="seat-score-mini">{{ seat.student.total_score|floatformat:1 }}p</span>
+                      </div>
+                      <button type="button" onclick="event.stopPropagation(); quickSeatCheck({{ r }}, {{ c }}, {{ seat.student.id }}, 'toggle_both')"
+                              class="seat-chk-btn {% if seat.student.has_book and seat.student.has_notebook %}is-checked-all{% elif seat.student.has_book or seat.student.has_notebook %}is-checked-partial{% endif %}">{% if seat.student.has_book and seat.student.has_notebook %}ตรวจสอบ ✓{% elif seat.student.has_book or seat.student.has_notebook %}ตรวจสอบ (1/2){% else %}ตรวจสอบ{% endif %}</button>
+                      {% endwith %}
+                    {% else %}
+                      <div class="seat-main-row">
+                        <div class="seat-ident">
+                          {% if seat.custom_label %}<span class="seat-mc-tag">{{ seat.custom_label }}</span>{% endif %}
+                          {% if seat.assigned_number %}
+                            <span class="seat-no-pill bg-secondary">{% if seat.assigned_number < 10 %}0{{ seat.assigned_number }}{% else %}{{ seat.assigned_number }}{% endif %}</span>
+                            <span class="seat-st-name text-muted fw-normal">ไม่มีชื่อ</span>
+                          {% elif not seat.custom_label %}
+                            <span class="text-muted" style="font-size:0.65rem;">R{{ r }} C{{ c }}</span>
+                          {% endif %}
+                        </div>
+                        <span class="text-muted" style="font-size:0.62rem;">ว่าง</span>
+                      </div>
+                    {% endif %}
+                  </div>
+                </div>
+                {% endif %}
+                {% endwith %}
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+
+        {% if board_position != 'top' %}
+        <div class="blackboard-bar">กระดานดำ / หน้าชั้นเรียน (ด้านล่าง)</div>
+        {% endif %}
+      </div>
+
+      <!-- Right-Side Panel: ขาดเรียน / ไม่ลงทะเบียน + สรุป X คนสุดท้าย + บันทึก/ยกเลิกคะแนน -->
+      <aside id="liveSidePanel">
+        <!-- 1. รายชื่อขาดเรียน / ไม่ลงทะเบียน -->
+        <div class="live-side-card" style="flex: 1 1 0; min-height: 90px;">
+          <div class="live-side-hdr">
+            <span>ขาดเรียน / ไม่ลงทะเบียน</span>
+            <span class="badge bg-danger" id="liveAbsentCountBadge">{{ seating_snapshot.absent_students|length }}</span>
+          </div>
+          <div class="live-side-scroll" id="liveAbsentList">
+            {% for ast in seating_snapshot.absent_students %}
+            <div class="live-side-row live-absent-row"
+                 onclick="{% if ast.seat_row and ast.seat_col %}openSeatModal('{{ ast.seat_row }}_{{ ast.seat_col }}', {{ ast.seat_row }}, {{ ast.seat_col }}){% else %}showSeatToast('{{ ast.name|escapejs }} ยังไม่ได้ระบุตำแหน่งที่นั่ง', true){% endif %}"
+                 title="{{ ast.student_id }} {{ ast.name }}">
+              <div class="text-truncate">
+                <span class="badge bg-secondary-subtle text-dark border me-1">{{ ast.class_number }}</span>
+                <span class="fw-semibold">{{ ast.name }}</span>
+              </div>
+              <span class="text-muted text-nowrap" style="font-size:0.65rem;">{{ ast.student_id }}</span>
+            </div>
+            {% empty %}
+            <div class="text-center text-success fw-semibold py-3 small">ลงทะเบียนครบทุกคนแล้ว ✓</div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- 2. สรุป X คนสุดท้ายที่ลงทะเบียน + บันทึกคะแนน -->
+        <div class="live-side-card" style="flex: 0 1 auto;">
+          <div class="live-side-hdr">
+            <span>สรุป X คนสุดท้ายที่ลงทะเบียน</span>
+            <span class="badge bg-secondary" id="liveRegCountBadge">ลงแล้ว {{ seating_snapshot.registered_students|length }}</span>
+          </div>
+          <div class="p-2 border-bottom bg-light-subtle d-flex align-items-center gap-1">
+            <span class="small fw-semibold text-nowrap">จำนวน</span>
+            <input type="number" id="lastXCountInput" class="form-control form-control-sm text-center fw-bold" style="width:52px;" min="1" max="50" value="5">
+            <span class="small fw-semibold text-nowrap">คนสุดท้าย</span>
+            <button type="button" id="btnSummarizeLastX" class="btn btn-sm btn-warning fw-bold px-2 ms-auto" onclick="summarizeLastXStudents()">สรุป</button>
+          </div>
+          <div id="lastXResultBox" class="d-none">
+            <div class="px-2 py-1 bg-warning-subtle border-bottom small fw-bold text-dark" id="lastXSummaryHeader"></div>
+            <div class="live-side-scroll border-bottom" id="lastXStudentList" style="max-height:135px;"></div>
+            <div class="p-2 bg-light">
+              <select id="lastXScoreRule" class="form-select form-select-sm mb-1" onchange="onLastXRuleChange()">
+                <option value="">-- กำหนดคะแนนเอง --</option>
+                {% for rule in score_rules %}
+                <option value="{{ rule.id }}" data-points="{{ rule.signed_points }}">{{ rule }}</option>
+                {% endfor %}
+              </select>
+              <div class="d-flex gap-1 mb-1">
+                <input type="number" step="0.5" id="lastXCustomPoints" class="form-control form-control-sm fw-bold text-center" style="width:66px;" value="-1" title="คะแนน (+ หรือ -)">
+                <input type="text" id="lastXCustomReason" class="form-control form-control-sm" placeholder="เหตุผล (เช่น มาสาย)">
+              </div>
+              {% if room_group_activities %}
+              <div class="border rounded bg-warning-subtle px-2 py-1 mb-1">
+                <label class="form-check form-check-inline d-flex align-items-center gap-1 m-0" style="font-size:0.72rem; cursor:pointer;">
+                  <input type="checkbox" class="form-check-input m-0" id="lastXApplyGroupChk" checked>
+                  <span class="fw-bold text-danger">หักคะแนนทั้งกลุ่มกิจกรรมด้วยหากคะแนนติดลบ</span>
+                </label>
+                <select id="lastXGroupActivitySelect" class="form-select form-select-sm mt-1" style="font-size:0.72rem;">
+                  {% for ga in room_group_activities %}
+                  <option value="{{ ga.id }}">กลุ่มจาก: {{ ga.title }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              {% endif %}
+              <div class="d-flex gap-1">
+                <button type="button" id="btnSaveLastXScore" class="btn btn-sm btn-primary fw-bold flex-grow-1" onclick="saveLastXScore()">บันทึกคะแนน</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeLastXSummary()">ปิด</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. คะแนนที่บันทึกวันนี้ (ยกเลิกได้) -->
+        <div class="live-side-card" id="recentScoreBatchesCard" style="flex: 0 1 auto; max-height: 185px;">
+          <div class="live-side-hdr">
+            <span>คะแนนที่บันทึกวันนี้</span>
+            <span class="text-muted fw-normal" style="font-size:0.65rem;">กดยกเลิกเพื่อคืนคะแนน</span>
+          </div>
+          <div class="live-side-scroll" id="recentScoreBatchesList">
+            {% for b in seating_snapshot.recent_score_batches %}
+            <div class="live-side-row">
+              <div class="min-w-0 flex-grow-1" title="{% for st in b.students %}#{{ st.class_number }} {{ st.first_name }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+                <div class="d-flex align-items-center gap-1">
+                  <span class="badge {% if b.points < 0 %}bg-danger{% else %}bg-success{% endif %}">{{ b.points|floatformat:"-1" }}</span>
+                  <span class="fw-semibold text-truncate">{{ b.label }}</span>
+                </div>
+                <div class="text-muted" style="font-size:0.64rem;">{{ b.student_count }} คน · {{ b.created_at }}</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold text-nowrap" style="font-size:0.68rem;"
+                      onclick="cancelScoreBatch('{{ b.batch_id|escapejs }}')">ยกเลิก</button>
+            </div>
+            {% empty %}
+            <div class="text-center text-muted py-2 small">ยังไม่มีรายการคะแนนกลุ่มวันนี้</div>
+            {% endfor %}
+          </div>
+        </div>
+      </aside>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================= -->
+  <!-- แท็บ 2: จัดที่นั่งนักเรียนรายห้อง (ค่าเริ่มต้นนั่งตามเลขเครื่องของห้องแล็บที่เลือก) -->
+  <!-- ======================================================================= -->
+  <div id="panelDesignMode" class="seating-panel {% if active_tab != 'design' %}d-none{% endif %}">
+    <form method="post" id="designBulkForm" class="seating-panel-card">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save_seat_design_bulk">
+      <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+      {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+      <input type="hidden" name="check_date" value="{{ check_date_str }}">
+      <input type="hidden" name="tab" value="design">
+      <input type="hidden" name="auto_direction" id="designAutoDirHidden" value="{{ auto_direction }}">
+
+      <!-- Toolbar Row 1: สถานะผัง + ตัวช่วยรันเลขที่นักเรียน + กด OK -->
+      <div class="seating-subbar">
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          <span class="badge bg-dark">
+            ใช้ผัง: {% if edit_classroom.lab_room %}{{ edit_classroom.lab_room.name }}{% else %}กำหนดเอง{% endif %} ({{ edit_classroom.get_effective_rows }}×{{ edit_classroom.get_effective_cols }})
+          </span>
+          {% if has_custom_seat_override %}
+          <span class="badge bg-warning text-dark">ปรับเฉพาะ {{ edit_classroom.name }}</span>
+          {% else %}
+          <span class="badge bg-success">นั่งตามเลขเครื่อง</span>
+          {% endif %}
+
+          <select id="fillColSelect" class="form-select form-select-sm fw-bold ms-1" style="width:auto;" onchange="onFillColSelectChange()" title="เลือกเฉพาะแถวตั้ง หรือทั้งหมด">
+            <option value="all">ทั้งหมด (C1–C{{ cols_range|length }})</option>
+            {% for c in cols_range %}
+            <option value="{{ c }}">C{{ c }}</option>
+            {% endfor %}
+          </select>
+
+          <div class="input-group input-group-sm" style="width:auto;">
+            <span class="input-group-text py-0 px-1 fw-bold">เลขที่เริ่ม</span>
+            <input type="number" id="fillStartInput" class="form-control form-control-sm text-center fw-bold" style="width:46px;" min="1" max="99" value="1"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault(); runAutoFill();}">
+          </div>
+
+          <div class="input-group input-group-sm" style="width:auto;" title="ข้ามเลขที่ไม่ต้องการใส่ เช่น 5,13 หรือ 10-12">
+            <span class="input-group-text py-0 px-1 fw-bold">ข้าม</span>
+            <input type="text" id="fillSkipInput" class="form-control form-control-sm" style="width:78px;" placeholder="เช่น 5,13"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault(); runAutoFill();}">
+          </div>
+
+          <select id="fillDirSelect" class="form-select form-select-sm fw-semibold" style="width:auto;" onchange="syncAutoDirFromFillSelect()">
+            {% if row_order == 'bottom_to_top' %}
+              <option value="bottom_to_top" {% if auto_direction != 'col_back_to_front' %}selected{% endif %}>ล่างขึ้นบน</option>
+              <option value="top_to_bottom" {% if auto_direction == 'col_back_to_front' %}selected{% endif %}>บนลงล่าง</option>
+            {% else %}
+              <option value="top_to_bottom" {% if auto_direction != 'col_back_to_front' %}selected{% endif %}>บนลงล่าง</option>
+              <option value="bottom_to_top" {% if auto_direction == 'col_back_to_front' %}selected{% endif %}>ล่างขึ้นบน</option>
+            {% endif %}
+          </select>
+
+          <button type="button" class="btn btn-sm btn-primary fw-bold px-3" onclick="runAutoFill()">OK</button>
+          <span id="designFillFeedback" class="badge bg-info-subtle text-info-emphasis border border-info-subtle d-none"></span>
+        </div>
+      </div>
+
+      <!-- Toolbar Row 2: แก้ไขผังห้อง / รีเซ็ตตามเลขเครื่อง / ล้างเลขที่ / บันทึก -->
+      <div class="seating-subbar seating-subbar-row2">
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          {% if edit_classroom.lab_room %}
+          <button type="button" class="btn btn-sm btn-outline-dark fw-semibold" onclick="openCurrentLabEditor({{ edit_classroom.lab_room.id }})">
+            แก้เลขเครื่อง / ทางเดิน ({{ edit_classroom.lab_room.name }}) &rarr;
+          </button>
+          {% endif %}
+          <span class="small text-muted d-none d-lg-inline ms-1">ค่าเริ่มต้นนักเรียนจะนั่งตรงกับเลขเครื่องของ {{ edit_classroom.lab_room.name|default:"ห้อง" }} และปรับเปลี่ยนเฉพาะ {{ edit_classroom.name }} ได้</span>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          {% if edit_classroom.lab_room %}
+          <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" onclick="document.getElementById('resetClassSeatsForm').submit()">
+            รีเซ็ตตามเลขเครื่อง
+          </button>
+          {% endif %}
+          <button type="button" class="btn btn-sm btn-outline-info text-dark fw-semibold" data-bs-toggle="modal" data-bs-target="#copyClassroomLayoutModal">
+            <i class="bi bi-copy me-1"></i>คัดลอกผังห้อง
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-danger fw-semibold" onclick="clearAllStudentNumbers()">ล้างเลขที่</button>
+          <span id="designDirtyBadge" class="badge bg-warning text-dark d-none">ยังไม่บันทึก</span>
+          <button type="submit" class="btn btn-sm btn-success fw-bold px-3">บันทึกที่นั่ง {{ edit_classroom.name }}</button>
+        </div>
+      </div>
+
+      <!-- Unassigned Students Bar (เลขที่ที่ยังไม่มีที่นั่ง — พิมพ์ลงช่องได้โดยตรงหรือคลิกเพื่อวาง) -->
+      <div id="designUnassignedBar" class="design-unassigned-bar d-none">
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          <span class="fw-bold text-danger text-nowrap" id="designUnassignedTitle">ยังไม่มีที่นั่ง:</span>
+          <div id="designUnassignedChips" class="design-unassigned-chips"></div>
+          <span class="text-muted" style="font-size:0.68rem;">(คลิกปุ่มเลขที่ หรือพิมพ์เลขลงช่องที่นั่งโดยตรง)</span>
+          <span id="designPlaceHint" class="badge bg-primary d-none"></span>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold text-nowrap" style="font-size:0.72rem;" onclick="autoPlaceMissingStudents()">
+          วางลงช่องว่างอัตโนมัติ
+        </button>
+      </div>
+
+      <!-- Design Grid Area (centered snug 4px layout) -->
+      <div class="seat-grid-wrap" id="designGridWrap">
+        <div class="seat-grid-area" id="designGridArea">
+          <div class="design-grid-inner">
+            {% if board_position == 'top' %}
+            <div class="blackboard-bar w-100">กระดานดำ / หน้าชั้นเรียน (ด้านบน)</div>
+            {% endif %}
+
+            <div id="designGridMatrix" style="--rows:{{ rows_range|length }};--cols:{{ cols_range|length }};">
+              <div class="seat-grid-corner">แถว</div>
+              {% for c in cols_range %}
+              <div class="seat-col-hdr design-col-pill" id="designColHdr_{{ c }}" onclick="toggleDesignColumnSelect({{ c }})" title="คลิกเพื่อเลือกเติมเฉพาะแถวตั้ง C{{ c }}">
+                <span>C{{ c }}</span>
+                <span class="col-range-badge" id="designColRange_{{ c }}"></span>
+              </div>
+              {% endfor %}
+
+              {% for r in rows_range %}
+                <div class="seat-row-hdr">R{{ r }}</div>
+                {% for c in cols_range %}
+                  {% seat_key r c as key %}
+                  {% with cur_num=seat_numbers|get_item:key cur_lbl=custom_labels|get_item:key %}
+                  <div class="design-cell {% if key in disabled_seats %}is-disabled{% endif %}"
+                       id="designCell_{{ key }}"
+                       data-row="{{ r }}" data-col="{{ c }}" data-key="{{ key }}"
+                       onclick="onDesignCellClick('{{ key }}')"
+                       title="แถว {{ r }}, C{{ c }} · เครื่อง {{ cur_lbl|default:'-' }}">
+                    <div class="design-st-name {% if key in disabled_seats %}is-empty{% endif %}" id="designName_{{ key }}">{% if key in disabled_seats %}ไม่มีเครื่อง{% endif %}</div>
+                    <div class="design-inputs-row">
+                      <span class="design-mc-badge" title="เลขเครื่อง (จาก {{ edit_classroom.lab_room.name|default:'ผัง' }})">ค {{ cur_lbl|default:'--' }}</span>
+                      <input type="text" inputmode="numeric" name="seat_num_{{ key }}" id="designNum_{{ key }}"
+                             data-row="{{ r }}" data-col="{{ c }}" data-key="{{ key }}"
+                             maxlength="2"
+                             class="design-num-input"
+                             placeholder="--"
+                             value="{% if key not in disabled_seats and cur_num %}{% if cur_num < 10 %}0{{ cur_num }}{% else %}{{ cur_num }}{% endif %}{% endif %}"
+                             {% if key in disabled_seats %}disabled{% endif %}
+                             onfocus="onStudentNumFocus(this, '{{ key }}')"
+                             onclick="event.stopPropagation(); onDesignInputClick(this, '{{ key }}')"
+                             onmouseup="if(this.value.length>0&&this.selectionStart===0&&this.selectionEnd===this.value.length)event.preventDefault();"
+                             oninput="onStudentNumInput(this, '{{ key }}')"
+                             onblur="onStudentNumBlur(this)"
+                             onkeydown="onDesignCellKeydown(event, {{ r }}, {{ c }})">
+                    </div>
+                  </div>
+                  {% endwith %}
+                {% endfor %}
+              {% endfor %}
+            </div>
+
+            {% if board_position != 'top' %}
+            <div class="blackboard-bar w-100">กระดานดำ / หน้าชั้นเรียน (ด้านล่าง)</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Clean Design Footer -->
+      <div class="design-footer">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="fw-bold text-dark" id="designStatsText">จัดแล้ว 0/0 คน</span>
+          <span class="badge bg-danger d-none" id="designDupBadge">เลขซ้ำ 0 ช่อง</span>
+          <span class="text-danger fw-semibold d-none" id="designMissingList"></span>
+        </div>
+        <span class="text-muted d-none d-lg-inline" style="font-size:0.68rem;">
+          <span class="badge bg-warning-subtle text-dark border border-warning">ค</span> = เลขเครื่อง (คงที่ตาม {{ edit_classroom.lab_room.name|default:"ผัง" }}) ·
+          <span class="badge bg-primary-subtle text-primary border border-primary">01</span> = เลขที่นักเรียน {{ edit_classroom.name }}
+        </span>
+      </div>
+    </form>
+  </div>
+
+  <!-- ======================================================================= -->
+  <!-- แท็บ 3: แผนผังห้อง (เลือกด้วย Combobox, เพิ่มห้อง, เลขเครื่อง & ทางเดิน) -->
+  <!-- ======================================================================= -->
+  <div id="panelLabMode" class="seating-panel {% if active_tab != 'lab' %}d-none{% endif %}">
+    {% if edit_lab_room %}
+    <form method="post" id="labDesignForm" class="seating-panel-card">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save_lab_room_design">
+      <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+      {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+      <input type="hidden" name="check_date" value="{{ check_date_str }}">
+      <input type="hidden" name="tab" value="lab">
+      <input type="hidden" name="lab_room_id" value="{{ edit_lab_room.id }}">
+      <input type="hidden" name="lab_name" value="{{ edit_lab_room.name }}">
+      <input type="hidden" name="auto_direction" id="labAutoDirHidden" value="{{ lab_auto_direction }}">
+      <input type="hidden" name="row_order" id="labRowOrderHidden" value="{{ lab_row_order }}">
+
+      <!-- Lab Toolbar Row 1: เลือกห้อง เพิ่มห้อง ขนาด กระดาน บันทึก -->
+      <div class="seating-subbar">
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          <span class="small fw-bold text-dark">เลือกห้อง:</span>
+          <select id="labSelectorSelect" class="form-select form-select-sm fw-bold border-primary" style="width:auto;" onchange="switchLabRoomUrl(this.value)" title="เลือกแผนผังห้อง">
+            {% for lab in lab_rooms %}
+            <option value="{{ lab.id }}" {% if lab.id == edit_lab_room.id %}selected{% endif %}>{{ lab.name }} ({{ lab.seat_rows }}×{{ lab.seat_cols }})</option>
+            {% endfor %}
+          </select>
+
+          <button type="button" class="btn btn-sm btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#createLabRoomModal">
+            + เพิ่มห้อง
+          </button>
+
+          <button type="button" class="btn btn-sm btn-outline-info text-dark fw-bold" data-bs-toggle="modal" data-bs-target="#copyLabRoomModal">
+            <i class="bi bi-copy me-1"></i>คัดลอกผังห้องอื่น
+          </button>
+
+          <button type="button" class="btn btn-sm btn-outline-success fw-bold" data-bs-toggle="modal" data-bs-target="#mapClassroomsLabModal">
+            จับคู่ห้องเรียน
+          </button>
+
+          <div class="input-group input-group-sm ms-1" style="width:auto;">
+            <span class="input-group-text py-0 px-1 fw-bold">แถว</span>
+            <input type="number" name="seat_rows" class="form-control form-control-sm text-center fw-bold" style="width:46px;" min="1" max="15" value="{{ edit_lab_room.seat_rows }}" required>
+            <span class="input-group-text py-0 px-1 fw-bold">คอลัมน์</span>
+            <input type="number" name="seat_cols" class="form-control form-control-sm text-center fw-bold" style="width:46px;" min="1" max="15" value="{{ edit_lab_room.seat_cols }}" required>
+          </div>
+
+          <select name="board_position" class="form-select form-select-sm fw-semibold" style="width:auto;">
+            <option value="bottom" {% if lab_board_position == 'bottom' %}selected{% endif %}>กระดานล่าง</option>
+            <option value="top" {% if lab_board_position == 'top' %}selected{% endif %}>กระดานบน</option>
+          </select>
+
+          <button type="submit" name="resize_only" value="1" class="btn btn-sm btn-outline-primary fw-bold" onclick="isLabDirty = false;">ปรับขนาด</button>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" onclick="document.getElementById('quickToggleLabBoardForm').submit()">
+            สลับกระดาน {% if lab_board_position == 'top' %}(บน){% else %}(ล่าง){% endif %}
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-semibold" onclick="clearAllLabMachineLabels()">ล้างเลขเครื่อง</button>
+          {% if lab_rooms|length > 1 %}
+          <button type="button" class="btn btn-sm btn-outline-danger" onclick="if(confirm('ยืนยันลบ {{ edit_lab_room.name|escapejs }}?')){isLabDirty=false;document.getElementById('deleteLabRoomForm').submit();}">ลบห้อง</button>
+          {% endif %}
+          <span id="labDirtyBadge" class="badge bg-warning text-dark d-none">ยังไม่บันทึก</span>
+          <button type="submit" class="btn btn-sm btn-success fw-bold px-3">บันทึกแผนผังห้อง</button>
+        </div>
+      </div>
+
+      <!-- Lab Toolbar Row 2: ตัวช่วยใส่เลขเครื่องอัตโนมัติให้อิสระ + กด OK -->
+      <div class="seating-subbar seating-subbar-row2">
+        <div class="d-flex flex-wrap align-items-center gap-1">
+          <span class="small fw-bold text-dark">ใส่เลขเครื่อง:</span>
+          <select id="labFillColSelect" class="form-select form-select-sm fw-bold" style="width:auto;" onchange="onLabFillColSelectChange()">
+            <option value="all">ทั้งหมด (C1–C{{ lab_cols_range|length }})</option>
+            {% for c in lab_cols_range %}
+            <option value="{{ c }}">C{{ c }}</option>
+            {% endfor %}
+          </select>
+
+          <div class="input-group input-group-sm" style="width:auto;" title="คำนำหน้าเลขเครื่อง (ไม่ใส่ก็ได้ เช่น PC-)">
+            <span class="input-group-text py-0 px-1 fw-bold">นำหน้า</span>
+            <input type="text" name="machine_prefix" id="labFillPrefixInput" maxlength="6" class="form-control form-control-sm text-center" style="width:52px;"
+                   value="{{ lab_machine_prefix|default:'' }}" placeholder="PC-"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault(); runLabMachineAutoFill();}">
+          </div>
+
+          <div class="input-group input-group-sm" style="width:auto;">
+            <span class="input-group-text py-0 px-1 fw-bold">เริ่ม</span>
+            <input type="number" name="machine_start" id="labFillStartInput" class="form-control form-control-sm text-center fw-bold" style="width:46px;" min="1" max="99" value="{{ lab_machine_start|default:1 }}"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault(); runLabMachineAutoFill();}">
+          </div>
+
+          <div class="input-group input-group-sm" style="width:auto;">
+            <span class="input-group-text py-0 px-1 fw-bold">ข้าม</span>
+            <input type="text" id="labFillSkipInput" class="form-control form-control-sm" style="width:72px;" placeholder="เช่น 5,13"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault(); runLabMachineAutoFill();}">
+          </div>
+
+          <select id="labFillDirSelect" class="form-select form-select-sm fw-semibold" style="width:auto;" onchange="syncLabAutoDirFromFillSelect()">
+            {% if lab_row_order == 'bottom_to_top' %}
+              <option value="bottom_to_top" {% if lab_auto_direction != 'col_back_to_front' and lab_auto_direction != 'col_snake' and lab_auto_direction != 'row_front_to_back' and lab_auto_direction != 'row_rtl' %}selected{% endif %}>แนวตั้ง ล่างขึ้นบน</option>
+              <option value="top_to_bottom" {% if lab_auto_direction == 'col_back_to_front' %}selected{% endif %}>แนวตั้ง บนลงล่าง</option>
+            {% else %}
+              <option value="top_to_bottom" {% if lab_auto_direction != 'col_back_to_front' and lab_auto_direction != 'col_snake' and lab_auto_direction != 'row_front_to_back' and lab_auto_direction != 'row_rtl' %}selected{% endif %}>แนวตั้ง บนลงล่าง</option>
+              <option value="bottom_to_top" {% if lab_auto_direction == 'col_back_to_front' %}selected{% endif %}>แนวตั้ง ล่างขึ้นบน</option>
+            {% endif %}
+            <option value="col_snake" {% if lab_auto_direction == 'col_snake' %}selected{% endif %}>ซิกแซกสลับแถวตั้ง</option>
+            <option value="row_ltr" {% if lab_auto_direction == 'row_front_to_back' %}selected{% endif %}>แนวนอน ซ้ายไปขวา</option>
+            <option value="row_rtl">แนวนอน ขวาไปซ้าย</option>
+          </select>
+
+          <button type="button" class="btn btn-sm btn-primary fw-bold px-3" onclick="runLabMachineAutoFill()">OK</button>
+          <div class="form-check form-check-inline ms-1 mb-0">
+            <input class="form-check-input" type="checkbox" id="labAutoReflowChk">
+            <label class="form-check-label small fw-semibold text-secondary" for="labAutoReflowChk" title="เมื่อซ่อน/เปิดเครื่อง ระบบจะรันเลขเครื่องที่เหลือใหม่ทันที">รันเลขใหม่อัตโนมัติเมื่อกด ×</label>
+          </div>
+          <span id="labFillFeedback" class="badge bg-info-subtle text-info-emphasis border border-info-subtle d-none"></span>
+        </div>
+      </div>
+
+      <!-- Lab Grid Area -->
+      <div class="seat-grid-wrap" id="labGridWrap">
+        <div class="seat-grid-area" id="labGridArea">
+          <div class="design-grid-inner">
+            {% if lab_board_position == 'top' %}
+            <div class="blackboard-bar w-100">กระดานดำ / หน้าชั้นเรียน {{ edit_lab_room.name }} (ด้านบน)</div>
+            {% endif %}
+
+            <div id="labGridMatrix" style="--rows:{{ lab_rows_range|length }};--cols:{{ lab_cols_range|length }};">
+              <div class="seat-grid-corner">แถว</div>
+              {% for c in lab_cols_range %}
+              <div class="seat-col-hdr design-col-pill" id="labColHdr_{{ c }}" onclick="toggleLabColumnSelect({{ c }})" title="คลิกเพื่อเลือกเติมเลขเครื่องเฉพาะแถวตั้ง C{{ c }}">
+                <span>C{{ c }}</span>
+                <span class="col-range-badge" id="labColRange_{{ c }}"></span>
+              </div>
+              {% endfor %}
+
+              {% for r in lab_rows_range %}
+                <div class="seat-row-hdr">R{{ r }}</div>
+                {% for c in lab_cols_range %}
+                  {% seat_key r c as key %}
+                  {% with cur_lbl=lab_machine_labels|get_item:key %}
+                  <div class="lab-cell {% if key in lab_disabled_seats %}is-disabled{% endif %}"
+                       id="labCell_{{ key }}"
+                       data-row="{{ r }}" data-col="{{ c }}" data-key="{{ key }}"
+                       onclick="onLabCellClick('{{ key }}')"
+                       title="แถว {{ r }}, C{{ c }}">
+                    <input type="hidden" name="seat_dis_{{ key }}" id="labDis_{{ key }}" value="{% if key in lab_disabled_seats %}1{% else %}0{% endif %}">
+                    <div class="lab-cell-top">
+                      <span class="lab-coord-txt" id="labCoord_{{ key }}">R{{ r }} C{{ c }}</span>
+                      <button type="button" class="lab-toggle-x-btn" id="labToggleBtn_{{ key }}"
+                              onclick="event.stopPropagation(); toggleLabSeatDisabled('{{ key }}')"
+                              title="{% if key in lab_disabled_seats %}คลิกเพื่อนำเครื่องกลับมา{% else %}คลิกเพื่อนำเครื่องออก (ตำแหน่งคงเดิม){% endif %}">×</button>
+                    </div>
+                    <div class="design-mc-wrap" title="เลขเครื่อง">
+                      <span class="design-mc-prefix">ค</span>
+                      <input type="text" name="seat_lbl_{{ key }}" id="labLbl_{{ key }}"
+                             data-row="{{ r }}" data-col="{{ c }}" data-key="{{ key }}"
+                             maxlength="10"
+                             class="design-lbl-input"
+                             placeholder=".."
+                             value="{{ cur_lbl|default:'' }}"
+                             {% if key in lab_disabled_seats %}readonly{% endif %}
+                             oninput="onLabLabelInput()"
+                             onkeydown="onLabCellKeydown(event, {{ r }}, {{ c }})">
+                    </div>
+                  </div>
+                  {% endwith %}
+                {% endfor %}
+              {% endfor %}
+            </div>
+
+            {% if lab_board_position != 'top' %}
+            <div class="blackboard-bar w-100">กระดานดำ / หน้าชั้นเรียน {{ edit_lab_room.name }} (ด้านล่าง)</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Lab Footer -->
+      <div class="design-footer">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="fw-bold text-dark" id="labStatsText">กำหนดเลขเครื่องแล้ว 0/0 จุด</span>
+          <span class="small text-muted">
+            <b>ห้องเรียนที่ใช้ผังนี้:</b>
+            {% if lab_linked_classrooms %}
+              <span class="text-primary fw-semibold">{{ lab_linked_classrooms|join:", " }}</span>
+            {% else %}
+              <span>ยังไม่มีห้องเรียนเลือกใช้</span>
+            {% endif %}
+          </span>
+        </div>
+        <span class="small text-muted">กด <b>×</b> มุมช่องเพื่อนำเครื่องออก (จางลง) · กดอีกครั้งเพื่อนำกลับมา (ไม่รันเลขใหม่)</span>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  <!-- ======================================================================= -->
+  <!-- แท็บ 4: รายชื่อนักเรียนที่ Login เข้ามาขณะนี้ -->
+  <!-- ======================================================================= -->
+  <div id="panelOnlineMode" class="seating-panel {% if active_tab != 'online' %}d-none{% endif %}">
+    <div class="seating-panel-card">
+      <div class="seating-subbar">
+        <span class="small fw-bold text-dark"><i class="bi bi-person-check-fill text-success me-1"></i>รายชื่อนักเรียนห้อง {{ edit_classroom.name }} ที่ Login เข้าสู่ระบบขณะนี้</span>
+        <span class="small text-success fw-bold"><span class="online-dot me-1"></span>อัปเดตสด</span>
+      </div>
+      <div class="online-table-scroll">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th>เลขที่</th>
+              <th>นักเรียน</th>
+              <th>ตำแหน่งโต๊ะ</th>
+              <th>IP / เวลา Login</th>
+              <th>เช็คหนังสือ/สมุด (+คะแนน)</th>
+              <th class="text-end">คะแนนรวม</th>
+            </tr>
+          </thead>
+          <tbody id="onlineStudentsTableBody">
+            {% for ost in seating_snapshot.online_students %}
+            <tr>
+              <td class="fw-bold">{{ ost.class_number }}</td>
+              <td><b class="small">{{ ost.student_id }} {{ ost.name }}</b></td>
+              <td class="small">{% if ost.seat_row %}แถว {{ ost.seat_row }}, C{{ ost.seat_col }}{% else %}<span class="text-muted">ยังไม่ได้ระบุ/เช็ค</span>{% endif %}</td>
+              <td class="small text-muted">{{ ost.online_info.ip }} · {{ ost.online_info.login_at }}</td>
+              <td>
+                <button type="button" class="btn btn-sm {% if ost.has_book and ost.has_notebook %}btn-success{% elif ost.has_book or ost.has_notebook %}btn-warning{% else %}btn-outline-secondary{% endif %} fw-bold px-3"
+                        onclick="quickSeatCheck({{ ost.seat_row }}, {{ ost.seat_col }}, {{ ost.id }}, 'toggle_both')">ตรวจสอบ{% if ost.has_book and ost.has_notebook %} ✓{% endif %}</button>
+              </td>
+              <td class="text-end fw-bold text-success">{{ ost.total_score|floatformat:1 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted py-4 small">ยังไม่มีนักเรียนห้องนี้ Login เข้ามาในขณะนี้</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Standalone Hidden Forms (never nested inside #designBulkForm or #labDesignForm) -->
+<form method="post" id="resetClassSeatsForm" class="d-none">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="reset_class_seats_to_lab_default">
+  <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+  {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+  <input type="hidden" name="check_date" value="{{ check_date_str }}">
+  <input type="hidden" name="tab" value="design">
+</form>
+
+{% if edit_lab_room %}
+<form method="post" id="quickToggleLabBoardForm" class="d-none">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="quick_toggle_lab_board">
+  <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+  <input type="hidden" name="lab_room_id" value="{{ edit_lab_room.id }}">
+  {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+  <input type="hidden" name="check_date" value="{{ check_date_str }}">
+  <input type="hidden" name="tab" value="lab">
+</form>
+
+<form method="post" id="deleteLabRoomForm" class="d-none">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="delete_lab_room">
+  <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+  <input type="hidden" name="lab_room_id" value="{{ edit_lab_room.id }}">
+  <input type="hidden" name="check_date" value="{{ check_date_str }}">
+  <input type="hidden" name="tab" value="lab">
+</form>
+{% endif %}
+
+<!-- Modal เพิ่มห้องใหม่ -->
+<div class="modal fade" id="createLabRoomModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white py-2">
+        <h6 class="modal-title fw-bold">เพิ่มห้องใหม่</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_lab_room">
+        <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+        <input type="hidden" name="check_date" value="{{ check_date_str }}">
+        <input type="hidden" name="tab" value="lab">
+        <div class="modal-body p-3">
+          <div class="mb-2">
+            <label class="form-label small fw-bold mb-1">ชื่อห้อง</label>
+            <input type="text" name="lab_name" class="form-control form-control-sm fw-bold" placeholder="เช่น ห้อง 137" required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold mb-1">แถวแนวนอน</label>
+              <input type="number" name="seat_rows" class="form-control form-control-sm" min="1" max="15" value="6" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold mb-1">แถวแนวตั้ง</label>
+              <input type="number" name="seat_cols" class="form-control form-control-sm" min="1" max="15" value="7" required>
+            </div>
+          </div>
+          <div class="mb-1">
+            <label class="form-label small fw-bold mb-1">ตำแหน่งกระดานดำ</label>
+            <select name="board_position" class="form-select form-select-sm">
+              <option value="bottom" selected>กระดานดำอยู่ด้านล่าง</option>
+              <option value="top">กระดานดำอยู่ด้านบน</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="submit" class="btn btn-sm btn-primary fw-bold">เพิ่มห้อง</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal จับคู่ทุกห้องเรียนกับห้องคอมในหน้าเดียว -->
+<div class="modal fade" id="mapClassroomsLabModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white py-2">
+        <h6 class="modal-title fw-bold">จับคู่ห้องเรียนกับแผนผังห้องคอม</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="bulk_assign_classroom_lab_rooms">
+        <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+        {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+        <input type="hidden" name="check_date" value="{{ check_date_str }}">
+        <input type="hidden" name="tab" class="sync-active-tab" value="{{ active_tab }}">
+        {% if edit_lab_room %}<input type="hidden" name="lab_room_id" value="{{ edit_lab_room.id }}">{% endif %}
+        <div class="modal-body p-3">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 pb-2 mb-2 border-bottom">
+            <div class="d-flex flex-wrap align-items-center gap-1">
+              <span class="small fw-bold text-dark me-1">ตั้งทุกห้องเป็น:</span>
+              {% for lab in lab_rooms %}
+              <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 fw-semibold" onclick="setAllClassroomLabMapping('{{ lab.id }}')">{{ lab.name }}</button>
+              {% endfor %}
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-1">
+              {% for lab in lab_rooms %}
+              <span class="badge bg-light text-dark border" id="bulkLabCount_{{ lab.id }}">{{ lab.name }}: 0 ห้อง</span>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="row g-2">
+            {% for c in classrooms %}
+            <div class="col-md-6">
+              <div class="d-flex align-items-center justify-content-between gap-2 border rounded px-2 py-1 bg-light-subtle">
+                <span class="fw-bold small text-nowrap {% if not c.seat_is_complete %}text-danger{% else %}text-dark{% endif %}">{{ c.name }}{% if not c.seat_is_complete %} <small>(ขาด {{ c.seat_missing_count }})</small>{% endif %}</span>
+                <div class="d-flex flex-wrap gap-1 justify-content-end">
+                  {% for lab in lab_rooms %}
+                  <input type="radio" class="btn-check bulk-lab-radio" name="class_lab_{{ c.id }}" id="mapCls_{{ c.id }}_lab_{{ lab.id }}" value="{{ lab.id }}" {% if c.lab_room_id == lab.id %}checked{% endif %} onchange="updateBulkLabMapCounts()">
+                  <label class="btn btn-sm btn-outline-primary py-0 px-2" for="mapCls_{{ c.id }}_lab_{{ lab.id }}">{{ lab.name }}</label>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="submit" class="btn btn-sm btn-success fw-bold">บันทึกการจับคู่ทั้งหมด</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================================= -->
+<!-- Offcanvas Drawer: เปิดรอบเช็คชื่อ & รอบเช็คชื่อทั้งหมด -->
+<!-- ======================================================================= -->
+<div class="offcanvas offcanvas-end attendance-checkin-box" tabindex="-1" id="seatingSettingsOffcanvas" style="width:380px;">
+  <div class="offcanvas-header attendance-checkin-header py-2">
+    <h6 class="offcanvas-title fw-bold"><i class="bi bi-qr-code-scan me-2"></i>เปิดรอบเช็คชื่อ &amp; จัดการคาบ</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body p-3">
+    <!-- 1. เปิดรอบเช็คชื่อใหม่ -->
+    <div class="card mb-3 attendance-checkin-box">
+      <div class="card-header attendance-checkin-header py-2 small fw-bold"><i class="bi bi-plus-circle-fill text-success me-1"></i>เปิดรอบเช็คชื่อใหม่</div>
+      <div class="card-body p-2">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_session">
+          <div class="mb-2">
+            <label class="form-label small fw-bold mb-0">ห้องเรียน</label>
+            <select name="classroom_id" class="form-select form-select-sm">
+              {% for c in classrooms %}
+              <option value="{{ c.id }}" {% if edit_classroom and edit_classroom.id == c.id %}selected{% endif %}>{{ c.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold mb-0">หัวข้อคาบเรียน</label>
+            <input type="text" name="title" class="form-control form-control-sm" value="คาบเรียนวิทยาการคำนวณ" required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold mb-0">โค้ดเช็คชื่อ</label>
+              <input type="text" name="check_in_code" class="form-control form-control-sm fw-bold" placeholder="เช่น DS2569">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold mb-0">คะแนน</label>
+              <input type="number" step="0.5" name="attendance_points" class="form-control form-control-sm" value="1.0">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold mb-0">จำกัด IP ห้องเรียน</label>
+            <input type="text" name="allowed_ip_prefix" class="form-control form-control-sm" placeholder="เว้นว่าง=ทุก IP">
+          </div>
+          <button type="submit" class="btn btn-success btn-sm w-100 fw-bold">เปิดรอบเช็คชื่อ (25 นาทีอัตโนมัติ)</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- 2. รอบเช็คชื่อทั้งหมด -->
+    <div class="card">
+      <div class="card-header py-2 small fw-bold"><i class="bi bi-list-ul text-primary me-1"></i>รอบเช็คชื่อทั้งหมด</div>
+      <div class="card-body p-0" style="max-height:340px;overflow-y:auto;">
+        <ul class="list-group list-group-flush">
+          {% for s in sessions %}
+          <li class="list-group-item d-flex justify-content-between align-items-center py-2 {% if current_session and s.id == current_session.id %}bg-primary-subtle{% endif %}">
+            <a href="?session_id={{ s.id }}&check_date={{ check_date_str }}" class="text-decoration-none text-dark flex-grow-1">
+              <div class="fw-bold small">{{ s.classroom.name }} - {{ s.title }}</div>
+              <div class="text-muted" style="font-size:0.72rem;">โค้ด: <b>{{ s.check_in_code }}</b> · {{ s.records.count }} คน</div>
+            </a>
+            <form method="post" class="m-0">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="toggle_session">
+              <input type="hidden" name="session_id" value="{{ s.id }}">
+              <input type="hidden" name="check_date" value="{{ check_date_str }}">
+              <input type="hidden" name="tab" class="sync-active-tab" value="{{ active_tab }}">
+              <button type="submit" class="btn btn-sm {% if s.is_open %}btn-success{% else %}btn-secondary{% endif %} py-0 px-2" style="font-size:0.72rem;">
+                {% if s.is_open %}เปิด{% else %}ปิด{% endif %}
+              </button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal คัดลอกแผนผังห้องเรียน (ดึงจากห้องอื่น หรือคัดลอกไปยังหลายห้องพร้อมกัน) -->
+<div class="modal fade" id="copyClassroomLayoutModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-info-subtle text-dark py-2">
+        <h6 class="modal-title fw-bold"><i class="bi bi-copy me-2"></i>คัดลอกผังห้องเรียน ({{ edit_classroom.name }})</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-3">
+        <div class="row g-3">
+          <div class="col-md-5 border-end-md">
+            <h6 class="fw-bold small text-primary mb-2">1. ดึงผังจากห้องอื่นมาใส่ {{ edit_classroom.name }}</h6>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="copy_classroom_layout">
+              <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+              {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+              <input type="hidden" name="check_date" value="{{ check_date_str }}">
+              <input type="hidden" name="tab" value="design">
+              <div class="mb-2">
+                <label class="form-label small fw-bold mb-1">ห้องต้นทาง:</label>
+                <select name="source_classroom_id" class="form-select form-select-sm fw-bold">
+                  {% for c in classrooms %}
+                    {% if c.id != edit_classroom.id %}
+                    <option value="{{ c.id }}">{{ c.name }} ({% if c.lab_room %}{{ c.lab_room.name }}{% else %}กำหนดเอง{% endif %} · {{ c.get_effective_rows }}×{{ c.get_effective_cols }})</option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-bold mb-1">รูปแบบเลขที่นักเรียน:</label>
+                <select name="copy_numbers_mode" class="form-select form-select-sm">
+                  <option value="auto_vertical" selected>จัดเรียงเลขที่ใหม่อัตโนมัติตามจำนวนนักเรียน {{ edit_classroom.name }}</option>
+                  <option value="keep">คัดลอกตำแหน่งเลขที่เหมือนห้องต้นทางทุกช่อง</option>
+                  <option value="clear">คัดลอกเฉพาะโครงสร้าง (ล้างเลขที่ว่างไว้)</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-sm btn-primary w-100 fw-bold">
+                <i class="bi bi-download me-1"></i>ดึงผังมาใส่ {{ edit_classroom.name }}
+              </button>
+            </form>
+          </div>
+          <div class="col-md-7">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="fw-bold small text-success mb-0">2. ส่งผังจาก {{ edit_classroom.name }} ไปยังหลายห้อง</h6>
+              <div class="d-flex gap-1">
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 small" onclick="toggleAllCopyTargetRooms(true)">เลือกทั้งหมด</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 small" onclick="toggleAllCopyTargetRooms(false)">ล้าง</button>
+              </div>
+            </div>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="copy_layout_to_rooms">
+              <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+              {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+              <input type="hidden" name="check_date" value="{{ check_date_str }}">
+              <input type="hidden" name="tab" value="design">
+              <div class="row g-1 mb-2" style="max-height:170px; overflow-y:auto;">
+                {% for c in classrooms %}
+                  {% if c.id != edit_classroom.id %}
+                  <div class="col-6">
+                    <label class="d-flex align-items-center gap-1 border rounded px-2 py-1 small bg-light" style="cursor:pointer;">
+                      <input type="checkbox" class="form-check-input m-0 copy-target-room-chk" name="target_classroom_ids" value="{{ c.id }}">
+                      <span class="fw-semibold">{{ c.name }}</span>
+                      <span class="text-muted">({{ c.seat_total_students }} คน)</span>
+                    </label>
+                  </div>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              <div class="mb-2">
+                <select name="copy_numbers_mode" class="form-select form-select-sm">
+                  <option value="auto_vertical" selected>จัดเรียงเลขที่ใหม่อัตโนมัติตามรายชื่อแต่ละห้อง</option>
+                  <option value="keep">คัดลอกเลขที่นั่งตรงกันทุกช่อง</option>
+                  <option value="clear">คัดลอกเฉพาะโครงสร้างผังและเลขเครื่อง</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">
+                <i class="bi bi-send-check me-1"></i>คัดลอกไปยังห้องที่เลือก
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if edit_lab_room %}
+<!-- Modal คัดลอกโครงสร้างแผนผังจากห้องอื่น -->
+<div class="modal fade" id="copyLabRoomModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header bg-info-subtle text-dark py-2">
+        <h6 class="modal-title fw-bold">คัดลอกแผนผังมายัง {{ edit_lab_room.name }}</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="copy_lab_room_layout">
+        <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+        <input type="hidden" name="lab_room_id" value="{{ edit_lab_room.id }}">
+        <input type="hidden" name="tab" value="lab">
+        <div class="modal-body p-3">
+          <div class="mb-2">
+            <label class="form-label small fw-bold">เลือกผังห้องต้นทาง:</label>
+            <select name="source_lab_room_id" class="form-select form-select-sm fw-bold">
+              {% for lab in lab_rooms %}
+                {% if lab.id != edit_lab_room.id %}
+                <option value="{{ lab.id }}">{{ lab.name }} ({{ lab.seat_rows }}×{{ lab.seat_cols }})</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <p class="small text-muted mb-0">ระบบจะคัดลอกจำนวนแถว/คอลัมน์ ตำแหน่งกระดาน ช่องทางเดิน และเลขเครื่องทั้งหมดมายัง {{ edit_lab_room.name }}</p>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="submit" class="btn btn-sm btn-primary fw-bold">คัดลอกผังทันที</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Modal แผงเช็คหนังสือ/สมุด & ให้คะแนนรายตำแหน่ง -->
+<div class="modal fade" id="seatCheckModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white py-2">
+        <h6 class="modal-title fw-bold" id="modalSeatTitle">ตรวจสอบที่นั่ง &amp; เช็คหนังสือ/สมุด</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modalSeatBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden forms สำหรับรองรับ action เก่าบนที่นั่งเดี่ยว -->
+<form method="post" id="seatLabelForm" class="d-none">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="set_seat_label">
+  <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+  {% if current_session %}<input type="hidden" name="session_id" value="{{ current_session.id }}">{% endif %}
+  <input type="hidden" name="seat_key" id="labelSeatKey">
+  <input type="hidden" name="seat_label" id="labelSeatValue">
+</form>
+{% if current_session %}
+<form method="post" id="moveSeatForm" class="d-none">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="move_student_seat">
+  <input type="hidden" name="session_id" value="{{ current_session.id }}">
+  <input type="hidden" name="record_id" id="moveRecordId">
+  <input type="hidden" name="new_row" id="moveNewRow">
+  <input type="hidden" name="new_col" id="moveNewCol">
+</form>
+{% endif %}
+{% else %}
+<div class="alert alert-warning">ไม่พบข้อมูลห้องเรียน กรุณาตรวจสอบการตั้งค่าห้องเรียน</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if edit_classroom %}
+<script>
+const CLASSROOM_ID = {{ edit_classroom.id }};
+const SESSION_ID = '{{ current_session.id|default:"" }}';
+const CHECK_DATE = '{{ check_date_str|escapejs }}';
+const CSRF_TOKEN = '{{ csrf_token }}';
+const SEAT_ROWS = {{ edit_classroom.get_effective_rows }};
+const SEAT_COLS = {{ edit_classroom.get_effective_cols }};
+const ROW_ORDER = '{{ row_order|escapejs }}' || 'bottom_to_top';
+const ROWS_RANGE = [{% for r in rows_range %}{{ r }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const COLS_RANGE = [{% for c in cols_range %}{{ c }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const STUDENTS_BY_NO = {{ students_by_no_json|safe }};
+const STUDENT_NUMBERS = {{ student_numbers_json|safe }};
+
+const LAB_ROWS = {{ edit_lab_room.seat_rows|default:6 }};
+const LAB_COLS = {{ edit_lab_room.seat_cols|default:7 }};
+const LAB_ROW_ORDER = '{{ lab_row_order|escapejs }}' || 'bottom_to_top';
+const LAB_ROWS_RANGE = [{% for r in lab_rows_range %}{{ r }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const LAB_COLS_RANGE = [{% for c in lab_cols_range %}{{ c }}{% if not forloop.last %},{% endif %}{% endfor %}];
+const LAB_NAMES = { {% for lab in lab_rooms %}'{{ lab.id }}': '{{ lab.name|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %} };
+
+let latestSnapshot = {{ seating_snapshot_json|safe }};
+let seatModalInstance = null;
+let currentActiveTab = '{{ active_tab|escapejs }}' || 'live';
+let isDesignDirty = false;
+let isLabDirty = false;
+let selectedMissingNo = null;
+let lastFocusedDesignKey = null;
+let toastHideTimer = null;
+let fillFeedbackTimer = null;
+let labFeedbackTimer = null;
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function format2(n) {
+  const v = parseInt(n, 10);
+  if (isNaN(v) || v <= 0) return '';
+  return v < 10 ? '0' + v : String(v);
+}
+
+function getAllGridKeys(rows = SEAT_ROWS, cols = SEAT_COLS) {
+  const keys = [];
+  for (let r = 1; r <= rows; r++) {
+    for (let c = 1; c <= cols; c++) {
+      keys.push(`${r}_${c}`);
+    }
+  }
+  return keys;
+}
+
+function parseSkipSet(str) {
+  const skip = new Set();
+  if (!str) return skip;
+  const parts = String(str).split(/[\s,]+/).filter(Boolean);
+  for (const p of parts) {
+    const rangeMatch = /^(\d+)\s*-\s*(\d+)$/.exec(p);
+    if (rangeMatch) {
+      const a = parseInt(rangeMatch[1], 10);
+      const b = parseInt(rangeMatch[2], 10);
+      if (!isNaN(a) && !isNaN(b)) {
+        const lo = Math.min(a, b);
+        const hi = Math.max(a, b);
+        for (let n = lo; n <= hi && n <= 999; n++) skip.add(n);
+      }
+    } else if (/^\d+$/.test(p)) {
+      const val = parseInt(p, 10);
+      if (!isNaN(val)) skip.add(val);
+    }
+  }
+  return skip;
+}
+
+function fitViewportGrids() {
+  const stage = document.getElementById('seatingStage');
+  if (!stage) return;
+  if (window.innerWidth < 768) {
+    stage.style.height = '';
+    const liveM = document.getElementById('liveGridMatrix');
+    if (liveM) liveM.classList.remove('seat-density-md', 'seat-density-sm', 'seat-density-xs');
+    return;
+  }
+
+  const rect = stage.getBoundingClientRect();
+  const availH = Math.max(320, Math.floor(window.innerHeight - rect.top - 10));
+  stage.style.height = availH + 'px';
+
+  const livePanel = document.getElementById('panelLiveMode');
+  const liveArea = document.getElementById('liveGridArea');
+  const liveMatrix = document.getElementById('liveGridMatrix');
+  if (livePanel && !livePanel.classList.contains('d-none') && liveArea && liveMatrix) {
+    liveArea.classList.remove('grid-scroll-fallback');
+    const aRect = liveArea.getBoundingClientRect();
+    const gap = 3;
+    const cellW = (aRect.width - 24 - gap * SEAT_COLS) / Math.max(1, SEAT_COLS);
+    const cellH = (aRect.height - 22 - gap * SEAT_ROWS) / Math.max(1, SEAT_ROWS);
+
+    liveMatrix.classList.remove('seat-density-md', 'seat-density-sm', 'seat-density-xs');
+    if (cellH >= 50 && cellW >= 108) {
+      liveMatrix.classList.add('seat-density-md');
+    } else if (cellH >= 38 && cellW >= 90) {
+      liveMatrix.classList.add('seat-density-sm');
+    } else {
+      liveMatrix.classList.add('seat-density-xs');
+    }
+
+    if (cellW < 68 || cellH < 24) {
+      liveArea.classList.add('grid-scroll-fallback');
+    }
+  }
+}
+
+function toggleFullscreenSeating() {
+  document.body.classList.toggle('seating-fullscreen');
+  const btn = document.getElementById('btnFullscreenToggle');
+  if (btn) {
+    const isFull = document.body.classList.contains('seating-fullscreen');
+    btn.classList.toggle('btn-dark', isFull);
+    btn.classList.toggle('btn-outline-secondary', !isFull);
+  }
+  requestAnimationFrame(fitViewportGrids);
+}
+
+function switchSeatingTab(tab) {
+  currentActiveTab = ['design', 'lab', 'online'].includes(tab) ? tab : 'live';
+  const panels = {
+    live: document.getElementById('panelLiveMode'),
+    design: document.getElementById('panelDesignMode'),
+    lab: document.getElementById('panelLabMode'),
+    online: document.getElementById('panelOnlineMode'),
+  };
+  const btns = {
+    live: document.getElementById('tabBtnLive'),
+    design: document.getElementById('tabBtnDesign'),
+    lab: document.getElementById('tabBtnLab'),
+    online: document.getElementById('tabBtnOnline'),
+  };
+  for (const key of ['live', 'design', 'lab', 'online']) {
+    if (panels[key]) panels[key].classList.toggle('d-none', key !== currentActiveTab);
+    if (btns[key]) btns[key].classList.toggle('active', key === currentActiveTab);
+  }
+  document.querySelectorAll('.sync-active-tab').forEach(el => {
+    el.value = currentActiveTab;
+  });
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.set('tab', currentActiveTab);
+    history.replaceState(null, '', u.toString());
+  } catch (e) {}
+  requestAnimationFrame(() => {
+    fitViewportGrids();
+    if (currentActiveTab === 'design') refreshDesignStatus();
+    if (currentActiveTab === 'lab') refreshLabStatus();
+  });
+}
+
+function switchLabRoomUrl(labId) {
+  if (isLabDirty && !confirm('คุณยังไม่ได้บันทึกการแก้ไขแผนผังห้อง ต้องการเปลี่ยนห้องโดยไม่บันทึกใช่หรือไม่?')) {
+    const sel = document.getElementById('labSelectorSelect');
+    if (sel) sel.value = '{{ edit_lab_room.id|default:"" }}';
+    return;
+  }
+  isLabDirty = false;
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.set('tab', 'lab');
+    u.searchParams.set('lab_room_id', labId);
+    u.searchParams.set('classroom_id', CLASSROOM_ID);
+    window.location.href = u.toString();
+  } catch (e) {
+    window.location.href = `?classroom_id=${CLASSROOM_ID}&tab=lab&lab_room_id=${labId}`;
+  }
+}
+
+function openCurrentLabEditor(labId) {
+  const curLab = '{{ edit_lab_room.id|default:"" }}';
+  if (String(labId) === curLab) {
+    switchSeatingTab('lab');
+  } else {
+    switchLabRoomUrl(labId);
+  }
+}
+
+/* ========================================================================= */
+/* Live Check Mode                                                           */
+/* ========================================================================= */
+function renderSeatCardInner(seat) {
+  const mcTag = (seat && seat.custom_label)
+    ? `<span class="seat-mc-tag" title="เครื่องที่ ${escapeHtml(seat.custom_label)}">${escapeHtml(seat.custom_label)}</span>`
+    : '';
+  if (!seat || !seat.student) {
+    const numPart = (seat && seat.assigned_number)
+      ? `${mcTag}<span class="seat-no-pill bg-secondary">${format2(seat.assigned_number)}</span><span class="seat-st-name text-muted fw-normal">ไม่มีชื่อ</span>`
+      : (mcTag ? mcTag : `<span class="text-muted" style="font-size:0.65rem;">R${seat ? seat.row : ''} C${seat ? seat.col : ''}</span>`);
+    return `<div class="seat-main-row"><div class="seat-ident">${numPart}</div><span class="text-muted" style="font-size:0.62rem;">ว่าง</span></div>`;
+  }
+  const st = seat.student;
+  const noVal = format2(seat.assigned_number || st.class_number || '');
+  const pillCls = st.is_online ? 'is-online' : (st.is_checked_in ? 'is-checked' : '');
+  const dotHtml = st.is_online ? '<span class="online-dot pulse-white"></span>' : '';
+  const allChecked = Boolean(st.has_book && st.has_notebook);
+  const partChecked = Boolean(!allChecked && (st.has_book || st.has_notebook));
+  const btnCls = allChecked ? 'is-checked-all' : (partChecked ? 'is-checked-partial' : '');
+  const btnTxt = allChecked ? 'ตรวจสอบ ✓' : (partChecked ? 'ตรวจสอบ (1/2)' : 'ตรวจสอบ');
+  return `
+    <div class="seat-main-row">
+      <div class="seat-ident">
+        ${mcTag}
+        <span class="seat-no-pill ${pillCls}">${dotHtml}${escapeHtml(noVal)}</span>
+        <span class="seat-st-name">${escapeHtml(st.first_name)}</span>
+      </div>
+      <span class="seat-score-mini">${Number(st.total_score).toFixed(1)}p</span>
+    </div>
+    <button type="button" onclick="event.stopPropagation(); quickSeatCheck(${seat.row}, ${seat.col}, ${st.id}, 'toggle_both')"
+            class="seat-chk-btn ${btnCls}">${btnTxt}</button>`;
+}
+
+function renderLiveColumnRanges(snap) {
+  const seats = (snap && snap.seats) ? snap.seats : {};
+  for (const c of COLS_RANGE) {
+    const nums = [];
+    for (let r = 1; r <= SEAT_ROWS; r++) {
+      const seat = seats[`${r}_${c}`];
+      if (!seat || seat.disabled) continue;
+      const n = seat.assigned_number || (seat.student ? seat.student.class_number : null);
+      if (n && Number(n) > 0) nums.push(Number(n));
+    }
+    const badge = document.getElementById(`liveColRange_${c}`);
+    if (badge) {
+      if (nums.length === 0) {
+        badge.innerText = '';
+      } else {
+        const minN = Math.min(...nums);
+        const maxN = Math.max(...nums);
+        badge.innerText = minN === maxN ? `#${format2(minN)}` : `#${format2(minN)}–${format2(maxN)}`;
+      }
+    }
+  }
+}
+
+function renderAbsentAndBatches(snap) {
+  if (!snap) return;
+  if (Array.isArray(snap.absent_students)) {
+    const absList = snap.absent_students;
+    const badge = document.getElementById('liveAbsentCountBadge');
+    if (badge) badge.innerText = String(absList.length);
+    const listEl = document.getElementById('liveAbsentList');
+    if (listEl) {
+      if (absList.length === 0) {
+        listEl.innerHTML = '<div class="text-center text-success fw-semibold py-3 small">ลงทะเบียนครบทุกคนแล้ว ✓</div>';
+      } else {
+        listEl.innerHTML = absList.map(ast => {
+          const clickAttr = (ast.seat_row && ast.seat_col)
+            ? `openSeatModal('${ast.seat_row}_${ast.seat_col}', ${ast.seat_row}, ${ast.seat_col})`
+            : `showSeatToast('${escapeHtml(ast.name).replace(/'/g, "\\'")} ยังไม่ได้ระบุตำแหน่งที่นั่ง', true)`;
+          return `
+            <div class="live-side-row live-absent-row" onclick="${clickAttr}" title="${escapeHtml(ast.student_id)} ${escapeHtml(ast.name)}">
+              <div class="text-truncate">
+                <span class="badge bg-secondary-subtle text-dark border me-1">${escapeHtml(ast.class_number)}</span>
+                <span class="fw-semibold">${escapeHtml(ast.name)}</span>
+              </div>
+              <span class="text-muted text-nowrap" style="font-size:0.65rem;">${escapeHtml(ast.student_id)}</span>
+            </div>`;
+        }).join('');
+      }
+    }
+  }
+
+  if (Array.isArray(snap.registered_students)) {
+    const regBadge = document.getElementById('liveRegCountBadge');
+    if (regBadge) regBadge.innerText = `ลงแล้ว ${snap.registered_students.length}`;
+  }
+
+  if (Array.isArray(snap.recent_score_batches)) {
+    const batches = snap.recent_score_batches;
+    const batchEl = document.getElementById('recentScoreBatchesList');
+    if (batchEl) {
+      if (batches.length === 0) {
+        batchEl.innerHTML = '<div class="text-center text-muted py-2 small">ยังไม่มีรายการคะแนนกลุ่มวันนี้</div>';
+      } else {
+        batchEl.innerHTML = batches.map(b => {
+          const ptsNum = Number(b.points || 0);
+          const ptsBadgeCls = ptsNum < 0 ? 'bg-danger' : 'bg-success';
+          const ptsLabel = ptsNum > 0 ? `+${ptsNum}` : String(ptsNum);
+          const namesTitle = (b.students || []).map(s => `#${s.class_number} ${s.first_name}`).join(', ');
+          return `
+            <div class="live-side-row">
+              <div class="min-w-0 flex-grow-1" title="${escapeHtml(namesTitle)}">
+                <div class="d-flex align-items-center gap-1">
+                  <span class="badge ${ptsBadgeCls}">${escapeHtml(ptsLabel)}</span>
+                  <span class="fw-semibold text-truncate">${escapeHtml(b.label)}</span>
+                </div>
+                <div class="text-muted" style="font-size:0.64rem;">${b.student_count} คน · ${escapeHtml(b.created_at)}</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold text-nowrap" style="font-size:0.68rem;"
+                      data-batch-id="${escapeHtml(b.batch_id)}" onclick="cancelScoreBatch(this.dataset.batchId)">ยกเลิก</button>
+            </div>`;
+        }).join('');
+      }
+    }
+  }
+}
+
+function applySnapshot(snap) {
+  if (!snap) return;
+  latestSnapshot = { ...(latestSnapshot || {}), ...snap };
+  if (typeof snap.session_remaining_seconds !== 'undefined') {
+    teacherRemainingSec = Number(snap.session_remaining_seconds || 0);
+    teacherSessionIsOpen = !!snap.session_is_open;
+    renderTeacherSessionTimer();
+  }
+  if (snap.summary) {
+    document.getElementById('sumOnline').innerText = `Login ${snap.summary.online_count}/${snap.summary.total_students}`;
+    document.getElementById('sumBook').innerText = `หนังสือ ${snap.summary.book_count}`;
+    document.getElementById('sumNotebook').innerText = `สมุด ${snap.summary.notebook_count}`;
+  }
+  if (snap.seats) {
+    for (const [key, seat] of Object.entries(snap.seats)) {
+      if (seat.disabled) continue;
+      const cell = document.getElementById(`liveSeatCell_${key}`);
+      const content = document.getElementById(`liveSeatContent_${key}`);
+      if (!cell || !content) continue;
+      cell.classList.remove('seat-online', 'seat-checked', 'seat-empty');
+      if (seat.student && seat.student.is_online) cell.classList.add('seat-online');
+      else if (seat.student && seat.student.is_checked_in) cell.classList.add('seat-checked');
+      else if (!seat.student) cell.classList.add('seat-empty');
+
+      const mcTxt = seat.custom_label ? `เครื่อง ${seat.custom_label} · ` : '';
+      if (seat.student) {
+        cell.title = `${mcTxt}เลขที่ ${seat.student.class_number} ${seat.student.name} (${seat.student.student_id}) · คะแนน ${Number(seat.student.total_score).toFixed(1)}`;
+      } else {
+        cell.title = `${seat.custom_label ? 'เครื่อง ' + seat.custom_label : seat.label} · ว่าง`;
+      }
+      content.innerHTML = renderSeatCardInner(seat);
+    }
+    renderLiveColumnRanges(snap);
+  }
+  if (snap.online_students) {
+    document.getElementById('onlineListBadge').innerText = `${snap.online_students.length}`;
+    const tbody = document.getElementById('onlineStudentsTableBody');
+    if (tbody) {
+      if (snap.online_students.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4 small">ยังไม่มีนักเรียนห้องนี้ Login เข้ามาในขณะนี้</td></tr>';
+      } else {
+        tbody.innerHTML = snap.online_students.map(ost => `
+          <tr>
+            <td class="fw-bold">${ost.class_number}</td>
+            <td><b class="small">${escapeHtml(ost.student_id)} ${escapeHtml(ost.name)}</b></td>
+            <td class="small">${ost.seat_row ? `แถว ${ost.seat_row}, C${ost.seat_col}` : '<span class="text-muted">ยังไม่ได้ระบุ/เช็ค</span>'}</td>
+            <td class="small text-muted">${escapeHtml(ost.online_info.ip)} · ${escapeHtml(ost.online_info.login_at)}</td>
+            <td>
+              <button type="button" class="btn btn-sm ${ost.has_book && ost.has_notebook ? 'btn-success' : (ost.has_book || ost.has_notebook ? 'btn-warning' : 'btn-outline-secondary')} fw-bold px-3"
+                      onclick="quickSeatCheck(${ost.seat_row}, ${ost.seat_col}, ${ost.id}, 'toggle_both')">ตรวจสอบ${ost.has_book && ost.has_notebook ? ' ✓' : ''}</button>
+            </td>
+            <td class="text-end fw-bold text-success">${Number(ost.total_score).toFixed(1)}</td>
+          </tr>`).join('');
+      }
+    }
+  }
+  renderAbsentAndBatches(snap);
+}
+
+function summarizeLastXStudents() {
+  const regList = Array.isArray(latestSnapshot?.registered_students) ? latestSnapshot.registered_students : [];
+  const rawX = parseInt(document.getElementById('lastXCountInput')?.value || '5', 10);
+  const x = Math.max(1, Math.min(50, isNaN(rawX) ? 5 : rawX));
+  const picked = regList.slice(-x).reverse();
+  const box = document.getElementById('lastXResultBox');
+  const hdr = document.getElementById('lastXSummaryHeader');
+  const listEl = document.getElementById('lastXStudentList');
+  if (!box || !listEl) return;
+
+  if (hdr) {
+    hdr.innerText = picked.length > 0
+      ? `${picked.length} คนสุดท้ายที่ลงทะเบียน (ล่าสุดอยู่บนสุด)`
+      : 'ยังไม่มีนักเรียนที่ลงทะเบียนหรือ Login ในขณะนี้';
+  }
+  if (picked.length === 0) {
+    listEl.innerHTML = '<div class="text-center text-muted py-2 small">ไม่มีรายชื่อ</div>';
+  } else {
+    listEl.innerHTML = picked.map((st, idx) => `
+      <label class="live-side-row" style="cursor:pointer;">
+        <div class="d-flex align-items-center gap-1 min-w-0">
+          <input type="checkbox" class="form-check-input m-0 last-x-st-chk flex-shrink-0" value="${st.id}" checked>
+          <span class="badge bg-warning-subtle text-dark border">${idx + 1}</span>
+          <span class="fw-bold">#${escapeHtml(st.class_number)}</span>
+          <span class="text-truncate">${escapeHtml(st.name)}</span>
+        </div>
+        <span class="text-muted text-nowrap" style="font-size:0.65rem;">${escapeHtml(st.registered_at)}</span>
+      </label>`).join('');
+  }
+  box.classList.remove('d-none');
+}
+
+function closeLastXSummary() {
+  document.getElementById('lastXResultBox')?.classList.add('d-none');
+}
+
+function onLastXRuleChange() {
+  const sel = document.getElementById('lastXScoreRule');
+  const ptsInp = document.getElementById('lastXCustomPoints');
+  if (!sel || !ptsInp) return;
+  const opt = sel.options[sel.selectedIndex];
+  const rulePts = opt ? opt.getAttribute('data-points') : null;
+  if (rulePts !== null && rulePts !== '') {
+    ptsInp.value = rulePts;
+  }
+}
+
+function saveLastXScore() {
+  const checkedIds = Array.from(document.querySelectorAll('.last-x-st-chk:checked')).map(el => el.value);
+  if (checkedIds.length === 0) {
+    showSeatToast('กรุณาเลือกนักเรียนอย่างน้อย 1 คน', true);
+    return;
+  }
+  const ruleId = document.getElementById('lastXScoreRule')?.value || '';
+  const pts = document.getElementById('lastXCustomPoints')?.value || '-1';
+  const reason = (document.getElementById('lastXCustomReason')?.value || '').trim();
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('action', 'award');
+  fd.append('check_date', CHECK_DATE);
+  if (SESSION_ID) fd.append('session_id', SESSION_ID);
+  checkedIds.forEach(id => fd.append('student_ids', id));
+  if (ruleId) fd.append('rule_id', ruleId);
+  fd.append('points', pts);
+  if (reason) fd.append('reason', reason);
+  const applyGrpChk = document.getElementById('lastXApplyGroupChk');
+  const grpActSel = document.getElementById('lastXGroupActivitySelect');
+  if (applyGrpChk) {
+    fd.append('apply_to_group', applyGrpChk.checked ? '1' : '0');
+    if (grpActSel && grpActSel.value) fd.append('group_activity_id', grpActSel.value);
+  }
+
+  fetch(`/api/classroom/${CLASSROOM_ID}/attendance-batch-score/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        showSeatToast(data.error || 'เกิดข้อผิดพลาดในการบันทึกคะแนน', true);
+        return;
+      }
+      applySnapshot(data);
+      showSeatToast(data.message, false);
+      closeLastXSummary();
+    })
+    .catch(() => showSeatToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', true));
+}
+
+function cancelScoreBatch(batchId) {
+  if (!batchId) return;
+  if (!confirm('ยืนยันยกเลิกการบันทึกคะแนนชุดนี้?')) return;
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('action', 'cancel');
+  fd.append('batch_id', batchId);
+  fd.append('check_date', CHECK_DATE);
+  if (SESSION_ID) fd.append('session_id', SESSION_ID);
+
+  fetch(`/api/classroom/${CLASSROOM_ID}/attendance-batch-score/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        showSeatToast(data.error || 'ไม่สามารถยกเลิกรายการคะแนนนี้ได้', true);
+        return;
+      }
+      applySnapshot(data);
+      showSeatToast(data.message, false);
+    })
+    .catch(() => showSeatToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', true));
+}
+
+function showSeatToast(msg, isError = false) {
+  const el = document.getElementById('seatCheckToast');
+  if (!el) return;
+  el.className = `seat-toast-inline ${isError ? 'bg-danger-subtle text-danger border border-danger' : 'bg-success-subtle text-success border border-success'}`;
+  el.innerText = msg;
+  el.title = msg;
+  el.classList.remove('d-none');
+  if (toastHideTimer) clearTimeout(toastHideTimer);
+  toastHideTimer = setTimeout(() => { el.classList.add('d-none'); }, 3500);
+}
+
+function quickSeatCheck(r, c, studentId, checkType, extraRuleId = '', note = null) {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('check_date', CHECK_DATE);
+  if (SESSION_ID) fd.append('session_id', SESSION_ID);
+  if (r) fd.append('seat_row', r);
+  if (c) fd.append('seat_col', c);
+  if (studentId) fd.append('student_id', studentId);
+  fd.append('check_type', checkType);
+  if (extraRuleId) fd.append('extra_rule_id', extraRuleId);
+  if (note !== null) fd.append('note', note);
+
+  return fetch(`/api/classroom/${CLASSROOM_ID}/seat-check/`, { method: 'POST', body: fd })
+    .then(res => res.json())
+    .then(data => {
+      if (!data.ok) {
+        showSeatToast(data.error || 'เกิดข้อผิดพลาด', true);
+        return null;
+      }
+      showSeatToast(data.message, false);
+      if (data.seats) {
+        applySnapshot(data);
+      } else {
+        refreshLiveSeating();
+      }
+      return data;
+    });
+}
+
+function onSeatCardClick(key, r, c) {
+  const seat = (latestSnapshot.seats || {})[key];
+  const quickBoth = document.getElementById('quickCheckBothToggle')?.checked;
+  if (quickBoth) {
+    const stId = seat && seat.student ? seat.student.id : '';
+    quickSeatCheck(r, c, stId, 'toggle_both');
+    return;
+  }
+  openSeatModal(key, r, c);
+}
+
+function openSeatModal(key, r, c) {
+  const seat = (latestSnapshot.seats || {})[key] || { row: r, col: c, label: `แถว ${r}, C${c}`, custom_label: '', assigned_number: null, student: null };
+  const mcTxt = seat.custom_label ? `เครื่องที่ ${seat.custom_label}` : seat.label;
+  document.getElementById('modalSeatTitle').innerText = `${mcTxt} (${seat.assigned_number ? 'เลขที่ ' + format2(seat.assigned_number) : 'ไม่ระบุเลขที่'})`;
+  const body = document.getElementById('modalSeatBody');
+  if (!seat.student) {
+    body.innerHTML = `<div class="alert alert-warning small mb-0">ตำแหน่งนี้ยังไม่มีเลขที่นักเรียน กรุณาไปที่แท็บ <b>"2. จัดที่นั่งนักเรียน"</b> เพื่อใส่เลขที่</div>`;
+  } else {
+    const st = seat.student;
+    const bothOn = Boolean(st.has_book && st.has_notebook);
+    body.innerHTML = `
+      <div class="d-flex align-items-center gap-3 mb-3 p-2 bg-light rounded border">
+        ${st.avatar ? `<img src="${escapeHtml(st.avatar)}" class="avatar-circle">` : `<span class="avatar-circle">${escapeHtml(st.initial)}</span>`}
+        <div class="flex-grow-1">
+          <div class="fw-bold">${escapeHtml(st.name)} (เลขที่ ${st.class_number})</div>
+          <div class="small text-muted">รหัส ${escapeHtml(st.student_id)} · คะแนนรวม <b class="text-success" id="modalTotalScore">${Number(st.total_score).toFixed(1)}</b></div>
+          <div class="small">${st.is_online ? `<span class="text-success fw-bold">● Login อยู่ (${escapeHtml(st.online_info.ip)} · ${escapeHtml(st.online_info.login_at)})</span>` : '<span class="text-muted">ยังไม่ได้ Login</span>'}</div>
+        </div>
+      </div>
+      <div class="row g-2 mb-3">
+        <div class="col-12">
+          <button type="button" id="modalBtnBoth" class="btn btn-lg w-100 fw-bold ${bothOn ? 'btn-success' : 'btn-outline-success'}"
+                  onclick="modalToggleCheck(${r}, ${c}, ${st.id}, 'toggle_both')">
+            ${bothOn ? 'ตรวจสอบ ✓ (หนังสือ + สมุดครบแล้ว)' : 'ตรวจสอบ (หนังสือ + สมุด)'}
+          </button>
+        </div>
+        <div class="col-6">
+          <button type="button" id="modalBtnBook" class="btn btn-sm w-100 fw-bold ${st.has_book ? 'btn-success' : 'btn-outline-success'}"
+                  onclick="modalToggleCheck(${r}, ${c}, ${st.id}, 'toggle_book')">
+            หนังสือ: ${st.has_book ? 'นำมา ✓ (+1)' : 'ยังไม่ได้เช็ค'}
+          </button>
+        </div>
+        <div class="col-6">
+          <button type="button" id="modalBtnNotebook" class="btn btn-sm w-100 fw-bold ${st.has_notebook ? 'btn-primary' : 'btn-outline-primary'}"
+                  onclick="modalToggleCheck(${r}, ${c}, ${st.id}, 'toggle_notebook')">
+            สมุด: ${st.has_notebook ? 'นำมา ✓ (+1)' : 'ยังไม่ได้เช็ค'}
+          </button>
+        </div>
+        <div class="col-12">
+          <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="modalToggleCheck(${r}, ${c}, ${st.id}, 'both_off')">✕ ล้างการเช็ควันนี้</button>
+        </div>
+      </div>
+      <div class="border-top pt-2">
+        <label class="form-label small fw-bold">หมายเหตุ / กฎคะแนนเพิ่มเติม:</label>
+        <input type="text" id="modalNoteInput" class="form-control form-control-sm mb-2" placeholder="หมายเหตุ (ถ้ามี)" value="${escapeHtml(st.note || '')}">
+        <div class="input-group input-group-sm">
+          <select id="modalExtraRule" class="form-select">
+            <option value="">-- เลือกให้/หักคะแนนเพิ่มเติม (ถ้าต้องการ) --</option>
+            {% for rule in score_rules %}
+            <option value="{{ rule.id }}">{{ rule }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn btn-primary fw-bold" onclick="modalSaveExtra(${r}, ${c}, ${st.id})">บันทึก</button>
+        </div>
+      </div>
+    `;
+  }
+  if (!seatModalInstance) {
+    seatModalInstance = new bootstrap.Modal(document.getElementById('seatCheckModal'));
+  }
+  seatModalInstance.show();
+}
+
+function modalToggleCheck(r, c, stId, type) {
+  quickSeatCheck(r, c, stId, type).then(data => {
+    if (!data) return;
+    document.getElementById('modalTotalScore').innerText = Number(data.total_score).toFixed(1);
+    const bothBtn = document.getElementById('modalBtnBoth');
+    if (bothBtn) {
+      const allOn = Boolean(data.has_book && data.has_notebook);
+      bothBtn.className = `btn btn-lg w-100 fw-bold ${allOn ? 'btn-success' : 'btn-outline-success'}`;
+      bothBtn.innerText = allOn ? 'ตรวจสอบ ✓ (หนังสือ + สมุดครบแล้ว)' : 'ตรวจสอบ (หนังสือ + สมุด)';
+    }
+    const bBtn = document.getElementById('modalBtnBook');
+    bBtn.className = `btn btn-sm w-100 fw-bold ${data.has_book ? 'btn-success' : 'btn-outline-success'}`;
+    bBtn.innerText = `หนังสือ: ${data.has_book ? 'นำมา ✓ (+1)' : 'ยังไม่ได้เช็ค'}`;
+    const nBtn = document.getElementById('modalBtnNotebook');
+    nBtn.className = `btn btn-sm w-100 fw-bold ${data.has_notebook ? 'btn-primary' : 'btn-outline-primary'}`;
+    nBtn.innerText = `สมุด: ${data.has_notebook ? 'นำมา ✓ (+1)' : 'ยังไม่ได้เช็ค'}`;
+  });
+}
+
+function modalSaveExtra(r, c, stId) {
+  const note = document.getElementById('modalNoteInput').value;
+  const extraRule = document.getElementById('modalExtraRule').value;
+  quickSeatCheck(r, c, stId, 'set', extraRule, note).then(data => {
+    if (data && seatModalInstance) seatModalInstance.hide();
+  });
+}
+
+function refreshLiveSeating() {
+  const qs = `check_date=${encodeURIComponent(CHECK_DATE)}` + (SESSION_ID ? `&session_id=${encodeURIComponent(SESSION_ID)}` : '');
+  fetch(`/api/classroom/${CLASSROOM_ID}/seating-live/?${qs}`)
+    .then(r => r.json())
+    .then(data => { if (data.ok) applySnapshot(data); })
+    .catch(() => {});
+}
+
+/* ========================================================================= */
+/* Tab 2: จัดที่นั่งนักเรียนรายห้อง                                           */
+/* ========================================================================= */
+function markDesignDirty(dirty = true) {
+  isDesignDirty = dirty;
+  const badge = document.getElementById('designDirtyBadge');
+  if (badge) badge.classList.toggle('d-none', !dirty);
+}
+
+function onFillColSelectChange() {
+  const colScope = document.getElementById('fillColSelect')?.value || 'all';
+  for (const c of COLS_RANGE) {
+    const isSel = (colScope !== 'all' && Number(colScope) === c);
+    const hdr = document.getElementById(`designColHdr_${c}`);
+    if (hdr) hdr.classList.toggle('is-col-selected', isSel);
+    for (let r = 1; r <= SEAT_ROWS; r++) {
+      const cell = document.getElementById(`designCell_${r}_${c}`);
+      if (cell) cell.classList.toggle('is-col-focus', isSel);
+    }
+  }
+}
+
+function toggleDesignColumnSelect(col) {
+  const sel = document.getElementById('fillColSelect');
+  if (!sel) return;
+  sel.value = (sel.value === String(col)) ? 'all' : String(col);
+  onFillColSelectChange();
+}
+
+function syncAutoDirFromFillSelect() {
+  const visualDir = document.getElementById('fillDirSelect')?.value || 'bottom_to_top';
+  const hid = document.getElementById('designAutoDirHidden');
+  if (!hid) return;
+  if (ROW_ORDER === 'bottom_to_top') {
+    hid.value = (visualDir === 'bottom_to_top') ? 'col_front_to_back' : 'col_back_to_front';
+  } else {
+    hid.value = (visualDir === 'top_to_bottom') ? 'col_front_to_back' : 'col_back_to_front';
+  }
+}
+
+function runAutoFill() {
+  const colScope = document.getElementById('fillColSelect')?.value || 'all';
+  const startRaw = (document.getElementById('fillStartInput')?.value || '').trim();
+  const skipStr = (document.getElementById('fillSkipInput')?.value || '').trim();
+  const visualDir = document.getElementById('fillDirSelect')?.value || 'bottom_to_top';
+
+  const startVal = Math.max(1, parseInt(startRaw || '1', 10) || 1);
+  const targetCols = (colScope === 'all') ? COLS_RANGE.slice() : [Number(colScope)];
+  const rowSeq = (visualDir === 'top_to_bottom') ? ROWS_RANGE.slice() : ROWS_RANGE.slice().reverse();
+
+  const activeCols = [];
+  let totalTargetSeats = 0;
+  for (const c of targetCols) {
+    const keys = [];
+    for (const r of rowSeq) {
+      const k = `${r}_${c}`;
+      const inp = document.getElementById(`designNum_${k}`);
+      if (inp && !inp.disabled) keys.push(k);
+    }
+    if (keys.length > 0) {
+      activeCols.push(keys);
+      totalTargetSeats += keys.length;
+    }
+  }
+  if (activeCols.length === 0) return;
+
+  const skipSet = parseSkipSet(skipStr);
+  const maxClassNo = STUDENT_NUMBERS.length ? Math.max(...STUDENT_NUMBERS) : 0;
+  const capByClass = (colScope === 'all' && maxClassNo > 0 && startVal <= maxClassNo) ? maxClassNo : null;
+  const seq = [];
+  for (let n = startVal; seq.length < totalTargetSeats && n <= 99; n++) {
+    if (capByClass !== null && n > capByClass) break;
+    if (!skipSet.has(n)) seq.push(n);
+  }
+
+  for (const keys of activeCols) {
+    for (const k of keys) {
+      const el = document.getElementById(`designNum_${k}`);
+      if (el) el.value = '';
+    }
+  }
+
+  let idx = 0;
+  let filledCount = 0;
+  activeCols.forEach((keys) => {
+    for (let j = 0; j < keys.length && idx < seq.length; j++) {
+      const el = document.getElementById(`designNum_${keys[j]}`);
+      if (el) {
+        el.value = format2(seq[idx++]);
+        filledCount++;
+      }
+    }
+  });
+
+  selectedMissingNo = null;
+  lastFocusedDesignKey = null;
+  syncAutoDirFromFillSelect();
+  refreshDesignStatus();
+  markDesignDirty(true);
+
+  const fb = document.getElementById('designFillFeedback');
+  if (fb) {
+    fb.innerText = `ใส่เลขที่แล้ว ${filledCount} ช่อง`;
+    fb.classList.remove('d-none');
+    if (fillFeedbackTimer) clearTimeout(fillFeedbackTimer);
+    fillFeedbackTimer = setTimeout(() => { fb.classList.add('d-none'); }, 3500);
+  }
+}
+
+function clearAllStudentNumbers() {
+  for (const key of getAllGridKeys(SEAT_ROWS, SEAT_COLS)) {
+    const inp = document.getElementById(`designNum_${key}`);
+    if (inp && !inp.disabled) inp.value = '';
+  }
+  selectedMissingNo = null;
+  lastFocusedDesignKey = null;
+  refreshDesignStatus();
+  markDesignDirty(true);
+}
+
+function getMissingStudentNumbers() {
+  const usedSet = new Set();
+  for (const key of getAllGridKeys(SEAT_ROWS, SEAT_COLS)) {
+    const inp = document.getElementById(`designNum_${key}`);
+    if (!inp || inp.disabled) continue;
+    const raw = inp.value.trim();
+    if (raw && /^\d+$/.test(raw) && parseInt(raw, 10) > 0) {
+      usedSet.add(parseInt(raw, 10));
+    }
+  }
+  return STUDENT_NUMBERS.filter(n => !usedSet.has(n));
+}
+
+function assignNumberToDesignKey(key, num) {
+  const inp = document.getElementById(`designNum_${key}`);
+  if (!inp || inp.disabled) return false;
+  inp.value = format2(num);
+  refreshDesignStatus();
+  markDesignDirty(true);
+  return true;
+}
+
+function placeSelectedMissingIntoKey(key) {
+  if (selectedMissingNo === null) return false;
+  const placed = selectedMissingNo;
+  selectedMissingNo = null;
+  if (!assignNumberToDesignKey(key, placed)) return false;
+  refreshDesignStatus();
+  return true;
+}
+
+function onStudentNumFocus(el, key) {
+  lastFocusedDesignKey = key;
+  if (selectedMissingNo === null && el && !el.disabled) {
+    el.select();
+  }
+}
+
+function onDesignInputClick(el, key) {
+  if (!el || el.disabled) return;
+  if (selectedMissingNo !== null) {
+    placeSelectedMissingIntoKey(key);
+    lastFocusedDesignKey = key;
+    el.focus();
+    el.select();
+    return;
+  }
+  lastFocusedDesignKey = key;
+  el.select();
+}
+
+function onDesignCellClick(key) {
+  const inp = document.getElementById(`designNum_${key}`);
+  if (!inp || inp.disabled) return;
+  if (selectedMissingNo !== null) {
+    placeSelectedMissingIntoKey(key);
+    return;
+  }
+  lastFocusedDesignKey = key;
+  inp.focus();
+  inp.select();
+}
+
+function selectMissingStudent(num) {
+  if (lastFocusedDesignKey) {
+    const inp = document.getElementById(`designNum_${lastFocusedDesignKey}`);
+    if (inp && !inp.disabled && !inp.value.trim()) {
+      assignNumberToDesignKey(lastFocusedDesignKey, num);
+      lastFocusedDesignKey = null;
+      return;
+    }
+  }
+  selectedMissingNo = (selectedMissingNo === num) ? null : num;
+  refreshDesignStatus();
+}
+
+function autoPlaceMissingStudents() {
+  const missing = getMissingStudentNumbers();
+  if (missing.length === 0) return;
+  const visualDir = document.getElementById('fillDirSelect')?.value || 'bottom_to_top';
+  const rowSeq = (visualDir === 'top_to_bottom') ? ROWS_RANGE.slice() : ROWS_RANGE.slice().reverse();
+  const emptyKeys = [];
+  for (const c of COLS_RANGE) {
+    for (const r of rowSeq) {
+      const k = `${r}_${c}`;
+      const inp = document.getElementById(`designNum_${k}`);
+      if (inp && !inp.disabled && !inp.value.trim()) emptyKeys.push(k);
+    }
+  }
+  let placedCount = 0;
+  for (let i = 0; i < missing.length && i < emptyKeys.length; i++) {
+    const inp = document.getElementById(`designNum_${emptyKeys[i]}`);
+    if (inp) {
+      inp.value = format2(missing[i]);
+      placedCount++;
+    }
+  }
+  selectedMissingNo = null;
+  lastFocusedDesignKey = null;
+  refreshDesignStatus();
+  if (placedCount > 0) markDesignDirty(true);
+  const fb = document.getElementById('designFillFeedback');
+  if (fb) {
+    fb.innerText = placedCount > 0
+      ? `วางคนยังไม่มีที่นั่งแล้ว ${placedCount} คน`
+      : 'ไม่มีช่องว่างเหลือให้วางแล้ว';
+    fb.classList.remove('d-none');
+    if (fillFeedbackTimer) clearTimeout(fillFeedbackTimer);
+    fillFeedbackTimer = setTimeout(() => { fb.classList.add('d-none'); }, 3500);
+  }
+}
+
+function onStudentNumInput(el, key) {
+  selectedMissingNo = null;
+  const ascii = el.value.replace(/[๐-๙]/g, d => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(d)));
+  const cleaned = ascii.replace(/\D/g, '').slice(0, 2);
+  if (el.value !== cleaned) el.value = cleaned;
+  refreshDesignStatus();
+  markDesignDirty(true);
+}
+
+function onStudentNumBlur(el) {
+  const raw = el.value.trim();
+  if (/^\d+$/.test(raw)) {
+    const v = parseInt(raw, 10);
+    el.value = v > 0 ? format2(v) : '';
+  }
+}
+
+function onDesignCellKeydown(ev, r, c) {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    const visualDir = document.getElementById('fillDirSelect')?.value || 'bottom_to_top';
+    const rowSeq = (visualDir === 'top_to_bottom') ? ROWS_RANGE.slice() : ROWS_RANGE.slice().reverse();
+    const orderedKeys = [];
+    for (const colVal of COLS_RANGE) {
+      for (const rowVal of rowSeq) {
+        const k = `${rowVal}_${colVal}`;
+        const inp = document.getElementById(`designNum_${k}`);
+        if (inp && !inp.disabled) orderedKeys.push(k);
+      }
+    }
+    const idx = orderedKeys.indexOf(`${r}_${c}`);
+    if (idx >= 0 && idx + 1 < orderedKeys.length) {
+      const nextEl = document.getElementById('designNum_' + orderedKeys[idx + 1]);
+      if (nextEl) {
+        nextEl.focus();
+        nextEl.select();
+      }
+    }
+    return;
+  }
+
+  let dr = 0, dc = 0;
+  if (ev.key === 'ArrowUp') dr = -1;
+  else if (ev.key === 'ArrowDown') dr = 1;
+  else if (ev.key === 'ArrowLeft') dc = -1;
+  else if (ev.key === 'ArrowRight') dc = 1;
+  else return;
+
+  ev.preventDefault();
+  let rIdx = ROWS_RANGE.indexOf(r);
+  let cIdx = COLS_RANGE.indexOf(c);
+  while (true) {
+    rIdx += dr;
+    cIdx += dc;
+    if (rIdx < 0 || rIdx >= ROWS_RANGE.length || cIdx < 0 || cIdx >= COLS_RANGE.length) break;
+    const nk = `${ROWS_RANGE[rIdx]}_${COLS_RANGE[cIdx]}`;
+    const target = document.getElementById('designNum_' + nk);
+    if (target && !target.disabled) {
+      target.focus();
+      target.select();
+      break;
+    }
+  }
+}
+
+function refreshDesignStatus() {
+  const counts = {};
+  const usedSet = new Set();
+
+  for (const key of getAllGridKeys(SEAT_ROWS, SEAT_COLS)) {
+    const inp = document.getElementById(`designNum_${key}`);
+    const nameEl = document.getElementById(`designName_${key}`);
+    if (!inp || inp.disabled) {
+      if (inp) inp.classList.remove('is-dup');
+      if (nameEl) {
+        nameEl.innerText = 'ไม่มีเครื่อง';
+        nameEl.classList.add('is-empty');
+      }
+      continue;
+    }
+    const raw = inp.value.trim();
+    const num = (raw && /^\d+$/.test(raw) && parseInt(raw, 10) > 0) ? parseInt(raw, 10) : null;
+    if (num !== null) {
+      usedSet.add(num);
+      counts[num] = (counts[num] || 0) + 1;
+    }
+    if (nameEl) {
+      if (num !== null) {
+        const stName = STUDENTS_BY_NO[String(num)];
+        nameEl.innerText = stName ? stName : 'ไม่มีชื่อ';
+        nameEl.classList.toggle('is-empty', !stName);
+      } else {
+        nameEl.innerText = '';
+        nameEl.classList.add('is-empty');
+      }
+    }
+  }
+
+  let dupTotal = 0;
+  for (const key of getAllGridKeys(SEAT_ROWS, SEAT_COLS)) {
+    const inp = document.getElementById(`designNum_${key}`);
+    if (!inp || inp.disabled) continue;
+    const raw = inp.value.trim();
+    const num = (raw && /^\d+$/.test(raw) && parseInt(raw, 10) > 0) ? parseInt(raw, 10) : null;
+    const isDup = (num !== null && counts[num] > 1);
+    inp.classList.toggle('is-dup', isDup);
+    if (isDup) dupTotal++;
+  }
+
+  for (const c of COLS_RANGE) {
+    const nums = [];
+    for (let r = 1; r <= SEAT_ROWS; r++) {
+      const inp = document.getElementById(`designNum_${r}_${c}`);
+      if (!inp || inp.disabled) continue;
+      if (inp.value && /^\d+$/.test(inp.value.trim()) && parseInt(inp.value, 10) > 0) {
+        nums.push(parseInt(inp.value, 10));
+      }
+    }
+    const badge = document.getElementById(`designColRange_${c}`);
+    if (badge) {
+      if (nums.length === 0) badge.innerText = '';
+      else {
+        const mn = Math.min(...nums);
+        const mx = Math.max(...nums);
+        badge.innerText = mn === mx ? `#${format2(mn)}` : `#${format2(mn)}–${format2(mx)}`;
+      }
+    }
+  }
+
+  const assignedStudents = STUDENT_NUMBERS.filter(n => usedSet.has(n)).length;
+  const statsEl = document.getElementById('designStatsText');
+  if (statsEl) {
+    statsEl.innerText = `จัดแล้ว ${assignedStudents}/${STUDENT_NUMBERS.length} คน`;
+  }
+
+  const dupBadge = document.getElementById('designDupBadge');
+  if (dupBadge) {
+    dupBadge.classList.toggle('d-none', dupTotal === 0);
+    dupBadge.innerText = `เลขซ้ำ ${dupTotal} ช่อง`;
+  }
+
+  const missing = STUDENT_NUMBERS.filter(n => !usedSet.has(n));
+  if (selectedMissingNo !== null && !missing.includes(selectedMissingNo)) {
+    selectedMissingNo = null;
+  }
+
+  const bar = document.getElementById('designUnassignedBar');
+  const titleEl = document.getElementById('designUnassignedTitle');
+  const chipsEl = document.getElementById('designUnassignedChips');
+  const hintEl = document.getElementById('designPlaceHint');
+  if (bar && chipsEl) {
+    const wasHidden = bar.classList.contains('d-none');
+    const isNowHidden = (missing.length === 0);
+    bar.classList.toggle('d-none', isNowHidden);
+    if (titleEl) {
+      titleEl.innerText = `ยังไม่มีที่นั่ง (${missing.length} คน):`;
+    }
+    if (missing.length === 0) {
+      chipsEl.innerHTML = '';
+    } else {
+      chipsEl.innerHTML = missing.map(n => {
+        const stName = STUDENTS_BY_NO[String(n)] || '';
+        const label = escapeHtml(`${format2(n)} ${stName}`.trim());
+        const selCls = (selectedMissingNo === n) ? ' is-selected' : '';
+        return `<button type="button" class="missing-st-chip${selCls}" onclick="selectMissingStudent(${n})" title="คลิกเพื่อเลือกวางเลขที่ ${format2(n)}">${label}</button>`;
+      }).join('');
+    }
+    if (hintEl) {
+      if (selectedMissingNo !== null) {
+        hintEl.innerText = `คลิกช่องเพื่อวางเลขที่ ${format2(selectedMissingNo)}`;
+        hintEl.classList.remove('d-none');
+      } else {
+        hintEl.classList.add('d-none');
+        hintEl.innerText = '';
+      }
+    }
+    if (wasHidden !== isNowHidden && currentActiveTab === 'design') {
+      requestAnimationFrame(fitViewportGrids);
+    }
+  }
+
+  for (const key of getAllGridKeys(SEAT_ROWS, SEAT_COLS)) {
+    const cell = document.getElementById(`designCell_${key}`);
+    if (cell) cell.classList.toggle('is-place-ready', selectedMissingNo !== null);
+  }
+
+  const missingEl = document.getElementById('designMissingList');
+  if (missingEl) {
+    if (missing.length === 0) {
+      missingEl.classList.add('d-none');
+      missingEl.innerText = '';
+    } else {
+      missingEl.classList.remove('d-none');
+      missingEl.innerText = `ยังไม่ได้จัด ${missing.length} คน`;
+    }
+  }
+
+  const clsSel = document.getElementById('classroomSelectorSelect');
+  if (clsSel) {
+    const isIncomplete = (missing.length > 0);
+    clsSel.classList.toggle('is-seat-incomplete', isIncomplete);
+    clsSel.classList.toggle('is-seat-complete', !isIncomplete);
+    const opt = clsSel.options[clsSel.selectedIndex];
+    if (opt) {
+      const baseName = opt.getAttribute('data-base-name') || opt.textContent.replace(/\s*\(ขาด\s+\d+\)$/, '');
+      opt.style.color = isIncomplete ? '#dc2626' : '#0f172a';
+      opt.style.fontWeight = isIncomplete ? '700' : '600';
+      opt.textContent = isIncomplete ? `${baseName} (ขาด ${missing.length})` : baseName;
+    }
+  }
+}
+
+/* ========================================================================= */
+/* Modal จับคู่ห้องเรียนกับห้องคอมทั้งหมด                                   */
+/* ========================================================================= */
+function updateBulkLabMapCounts() {
+  const counts = {};
+  Object.keys(LAB_NAMES).forEach(id => { counts[id] = 0; });
+  document.querySelectorAll('.bulk-lab-radio:checked').forEach(r => {
+    counts[r.value] = (counts[r.value] || 0) + 1;
+  });
+  Object.entries(counts).forEach(([labId, cnt]) => {
+    const el = document.getElementById(`bulkLabCount_${labId}`);
+    if (el) el.innerText = `${LAB_NAMES[labId] || labId}: ${cnt} ห้อง`;
+  });
+}
+
+function setAllClassroomLabMapping(labId) {
+  document.querySelectorAll(`.bulk-lab-radio[value="${labId}"]`).forEach(r => {
+    r.checked = true;
+  });
+  updateBulkLabMapCounts();
+}
+
+/* ========================================================================= */
+/* Tab 3: จัดการแผนผังห้องกลาง (134, 135, 136...)                             */
+/* ========================================================================= */
+function markLabDirty(dirty = true) {
+  isLabDirty = dirty;
+  const badge = document.getElementById('labDirtyBadge');
+  if (badge) badge.classList.toggle('d-none', !dirty);
+}
+
+function onLabFillColSelectChange() {
+  const colScope = document.getElementById('labFillColSelect')?.value || 'all';
+  for (const c of LAB_COLS_RANGE) {
+    const isSel = (colScope !== 'all' && Number(colScope) === c);
+    const hdr = document.getElementById(`labColHdr_${c}`);
+    if (hdr) hdr.classList.toggle('is-col-selected', isSel);
+    for (let r = 1; r <= LAB_ROWS; r++) {
+      const cell = document.getElementById(`labCell_${r}_${c}`);
+      if (cell) cell.classList.toggle('is-col-focus', isSel);
+    }
+  }
+}
+
+function toggleLabColumnSelect(col) {
+  const sel = document.getElementById('labFillColSelect');
+  if (!sel) return;
+  sel.value = (sel.value === String(col)) ? 'all' : String(col);
+  onLabFillColSelectChange();
+}
+
+function syncLabAutoDirFromFillSelect() {
+  const visualDir = document.getElementById('labFillDirSelect')?.value || 'bottom_to_top';
+  const hid = document.getElementById('labAutoDirHidden');
+  if (!hid) return;
+  if (visualDir === 'col_snake') {
+    hid.value = 'col_snake';
+  } else if (visualDir === 'row_ltr' || visualDir === 'row_rtl') {
+    hid.value = 'row_front_to_back';
+  } else if (LAB_ROW_ORDER === 'bottom_to_top') {
+    hid.value = (visualDir === 'bottom_to_top') ? 'col_front_to_back' : 'col_back_to_front';
+  } else {
+    hid.value = (visualDir === 'top_to_bottom') ? 'col_front_to_back' : 'col_back_to_front';
+  }
+}
+
+function toggleAllCopyTargetRooms(checked) {
+  document.querySelectorAll('.copy-target-room-chk').forEach(cb => {
+    cb.checked = !!checked;
+  });
+}
+
+function runLabMachineAutoFill() {
+  const colScope = document.getElementById('labFillColSelect')?.value || 'all';
+  const startRaw = (document.getElementById('labFillStartInput')?.value || '').trim();
+  const skipStr = (document.getElementById('labFillSkipInput')?.value || '').trim();
+  const prefix = (document.getElementById('labFillPrefixInput')?.value || '').trim();
+  const visualDir = document.getElementById('labFillDirSelect')?.value || 'bottom_to_top';
+
+  const startVal = Math.max(1, parseInt(startRaw || '1', 10) || 1);
+  const targetCols = (colScope === 'all') ? LAB_COLS_RANGE.slice() : [Number(colScope)];
+  const orderedKeys = [];
+
+  if (visualDir === 'row_ltr' || visualDir === 'row_rtl') {
+    const colSeq = (visualDir === 'row_rtl') ? targetCols.slice().reverse() : targetCols.slice();
+    const rowSeq = (LAB_ROW_ORDER === 'bottom_to_top') ? LAB_ROWS_RANGE.slice().reverse() : LAB_ROWS_RANGE.slice();
+    for (const r of rowSeq) {
+      for (const c of colSeq) {
+        const k = `${r}_${c}`;
+        const d = document.getElementById(`labDis_${k}`);
+        if (!d || d.value !== '1') orderedKeys.push(k);
+      }
+    }
+  } else {
+    targetCols.forEach((c, colIdx) => {
+      let rowSeq;
+      if (visualDir === 'col_snake') {
+        const baseSeq = (LAB_ROW_ORDER === 'bottom_to_top') ? LAB_ROWS_RANGE.slice().reverse() : LAB_ROWS_RANGE.slice();
+        rowSeq = (colIdx % 2 === 1) ? baseSeq.reverse() : baseSeq;
+      } else {
+        rowSeq = (visualDir === 'top_to_bottom') ? LAB_ROWS_RANGE.slice() : LAB_ROWS_RANGE.slice().reverse();
+      }
+      for (const r of rowSeq) {
+        const k = `${r}_${c}`;
+        const d = document.getElementById(`labDis_${k}`);
+        if (!d || d.value !== '1') orderedKeys.push(k);
+      }
+    });
+  }
+
+  if (orderedKeys.length === 0) return;
+
+  const skipSet = parseSkipSet(skipStr);
+  const seq = [];
+  for (let n = startVal; seq.length < orderedKeys.length && n <= 999; n++) {
+    if (!skipSet.has(n)) seq.push(n);
+  }
+
+  for (const k of orderedKeys) {
+    const el = document.getElementById(`labLbl_${k}`);
+    if (el) el.value = '';
+  }
+
+  let filledCount = 0;
+  for (let i = 0; i < orderedKeys.length && i < seq.length; i++) {
+    const el = document.getElementById(`labLbl_${orderedKeys[i]}`);
+    if (el) {
+      el.value = prefix ? `${prefix}${format2(seq[i])}` : format2(seq[i]);
+      filledCount++;
+    }
+  }
+
+  syncLabAutoDirFromFillSelect();
+  refreshLabStatus();
+  markLabDirty(true);
+
+  const fb = document.getElementById('labFillFeedback');
+  if (fb) {
+    fb.innerText = `ใส่เลขเครื่องแล้ว ${filledCount} จุด`;
+    fb.classList.remove('d-none');
+    if (labFeedbackTimer) clearTimeout(labFeedbackTimer);
+    labFeedbackTimer = setTimeout(() => { fb.classList.add('d-none'); }, 3500);
+  }
+}
+
+function clearAllLabMachineLabels() {
+  for (const key of getAllGridKeys(LAB_ROWS, LAB_COLS)) {
+    const d = document.getElementById(`labDis_${key}`);
+    if (d && d.value === '1') continue;
+    const el = document.getElementById(`labLbl_${key}`);
+    if (el) el.value = '';
+  }
+  refreshLabStatus();
+  markLabDirty(true);
+}
+
+function toggleLabSeatDisabled(key) {
+  const cell = document.getElementById(`labCell_${key}`);
+  const disInp = document.getElementById(`labDis_${key}`);
+  const lblInp = document.getElementById(`labLbl_${key}`);
+  const btn = document.getElementById(`labToggleBtn_${key}`);
+  const isNowDisabled = !(disInp && disInp.value === '1');
+  if (disInp) disInp.value = isNowDisabled ? '1' : '0';
+  if (cell) cell.classList.toggle('is-disabled', isNowDisabled);
+  if (lblInp) lblInp.readOnly = isNowDisabled;
+  if (btn) btn.title = isNowDisabled ? 'คลิกเพื่อนำเครื่องกลับมา' : 'คลิกเพื่อนำเครื่องออก (ตำแหน่งคงเดิม)';
+  if (document.getElementById('labAutoReflowChk')?.checked) {
+    runLabMachineAutoFill();
+    return;
+  }
+  refreshLabStatus();
+  markLabDirty(true);
+}
+
+function onLabCellClick(key) {
+  const disInp = document.getElementById(`labDis_${key}`);
+  if (disInp && disInp.value === '1') {
+    toggleLabSeatDisabled(key);
+    return;
+  }
+  const lbl = document.getElementById(`labLbl_${key}`);
+  if (lbl) lbl.focus();
+}
+
+function onLabLabelInput() {
+  refreshLabStatus();
+  markLabDirty(true);
+}
+
+function onLabCellKeydown(ev, r, c) {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    const visualDir = document.getElementById('labFillDirSelect')?.value || 'bottom_to_top';
+    const rowSeq = (visualDir === 'top_to_bottom') ? LAB_ROWS_RANGE.slice() : LAB_ROWS_RANGE.slice().reverse();
+    const orderedKeys = [];
+    for (const colVal of LAB_COLS_RANGE) {
+      for (const rowVal of rowSeq) {
+        const k = `${rowVal}_${colVal}`;
+        const d = document.getElementById(`labDis_${k}`);
+        if (!d || d.value !== '1') orderedKeys.push(k);
+      }
+    }
+    const idx = orderedKeys.indexOf(`${r}_${c}`);
+    if (idx >= 0 && idx + 1 < orderedKeys.length) {
+      const nextEl = document.getElementById('labLbl_' + orderedKeys[idx + 1]);
+      if (nextEl) {
+        nextEl.focus();
+        nextEl.select();
+      }
+    }
+    return;
+  }
+
+  let dr = 0, dc = 0;
+  if (ev.key === 'ArrowUp') dr = -1;
+  else if (ev.key === 'ArrowDown') dr = 1;
+  else if (ev.key === 'ArrowLeft') dc = -1;
+  else if (ev.key === 'ArrowRight') dc = 1;
+  else return;
+
+  ev.preventDefault();
+  let rIdx = LAB_ROWS_RANGE.indexOf(r);
+  let cIdx = LAB_COLS_RANGE.indexOf(c);
+  while (true) {
+    rIdx += dr;
+    cIdx += dc;
+    if (rIdx < 0 || rIdx >= LAB_ROWS_RANGE.length || cIdx < 0 || cIdx >= LAB_COLS_RANGE.length) break;
+    const nk = `${LAB_ROWS_RANGE[rIdx]}_${LAB_COLS_RANGE[cIdx]}`;
+    const d = document.getElementById(`labDis_${nk}`);
+    if (!d || d.value !== '1') {
+      const target = document.getElementById('labLbl_' + nk);
+      if (target) {
+        target.focus();
+        target.select();
+      }
+      break;
+    }
+  }
+}
+
+function refreshLabStatus() {
+  let enabled = 0;
+  let labeled = 0;
+  for (const key of getAllGridKeys(LAB_ROWS, LAB_COLS)) {
+    const d = document.getElementById(`labDis_${key}`);
+    const lbl = document.getElementById(`labLbl_${key}`);
+    if (d && d.value === '1') continue;
+    enabled++;
+    if (lbl && lbl.value.trim()) labeled++;
+  }
+  for (const c of LAB_COLS_RANGE) {
+    const vals = [];
+    for (let r = 1; r <= LAB_ROWS; r++) {
+      const k = `${r}_${c}`;
+      const d = document.getElementById(`labDis_${k}`);
+      const lbl = document.getElementById(`labLbl_${k}`);
+      if (d && d.value === '1') continue;
+      const m = lbl ? lbl.value.trim().match(/(\d+)$/) : null;
+      if (m) vals.push(parseInt(m[1], 10));
+    }
+    const badge = document.getElementById(`labColRange_${c}`);
+    if (badge) {
+      if (vals.length === 0) badge.innerText = '';
+      else {
+        const mn = Math.min(...vals);
+        const mx = Math.max(...vals);
+        badge.innerText = mn === mx ? `#${format2(mn)}` : `#${format2(mn)}–${format2(mx)}`;
+      }
+    }
+  }
+  const stats = document.getElementById('labStatsText');
+  if (stats) {
+    stats.innerText = `กำหนดเลขเครื่องแล้ว ${labeled}/${enabled} จุด`;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderLiveColumnRanges(latestSnapshot);
+  renderAbsentAndBatches(latestSnapshot);
+  refreshDesignStatus();
+  refreshLabStatus();
+  updateBulkLabMapCounts();
+  fitViewportGrids();
+
+  const designForm = document.getElementById('designBulkForm');
+  if (designForm) {
+    designForm.addEventListener('submit', () => {
+      selectedMissingNo = null;
+      lastFocusedDesignKey = null;
+      syncAutoDirFromFillSelect();
+      markDesignDirty(false);
+    });
+  }
+  const labForm = document.getElementById('labDesignForm');
+  if (labForm) {
+    labForm.addEventListener('submit', () => {
+      syncLabAutoDirFromFillSelect();
+      markLabDirty(false);
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && selectedMissingNo !== null) {
+      selectedMissingNo = null;
+      refreshDesignStatus();
+    }
+  });
+
+  document.querySelectorAll('.content-area > .alert').forEach(al => {
+    al.addEventListener('closed.bs.alert', () => requestAnimationFrame(fitViewportGrids));
+  });
+});
+
+window.addEventListener('resize', () => requestAnimationFrame(fitViewportGrids));
+window.addEventListener('beforeunload', (e) => {
+  if (isDesignDirty || isLabDirty) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+let teacherRemainingSec = Number({{ current_session_remaining_seconds|default:0 }});
+let teacherSessionIsOpen = {% if current_session and current_session.is_open %}true{% else %}false{% endif %};
+function renderTeacherSessionTimer() {
+  const badge = document.getElementById('teacherSessionCountdownBadge');
+  if (!badge) return;
+  if (teacherSessionIsOpen && teacherRemainingSec > 0) {
+    const m = Math.floor(teacherRemainingSec / 60);
+    const s = teacherRemainingSec % 60;
+    badge.className = 'badge bg-success';
+    badge.innerHTML = `<i class="bi bi-clock me-1"></i>เปิดเช็คชื่อ <span id="teacherSessionTimer">${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}</span>`;
+  } else {
+    badge.className = 'badge bg-secondary';
+    badge.textContent = 'ปิดเช็คชื่อแล้ว';
+  }
+}
+renderTeacherSessionTimer();
+setInterval(() => {
+  if (teacherSessionIsOpen && teacherRemainingSec > 0) {
+    teacherRemainingSec = Math.max(0, teacherRemainingSec - 1);
+    if (teacherRemainingSec === 0) teacherSessionIsOpen = false;
+    renderTeacherSessionTimer();
+  }
+}, 1000);
+setInterval(refreshLiveSeating, 3000);
+</script>
+{% endif %}
+{% endblock %}

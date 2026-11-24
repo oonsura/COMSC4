@@ -1,0 +1,117 @@
+<div class="card">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span><i class="bi bi-bar-chart-line-fill text-primary me-2"></i>สถิติคะแนนแยกตามช่วงคะแนน (ห้อง {{ room_label }})</span>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge bg-info text-dark">แสดงรายละเอียดเฉพาะคุณ</span>
+      {% if allow_room_switch and user.role != 'student' %}
+      <form method="get" class="d-flex gap-1">
+        <select name="room" class="form-select form-select-sm" onchange="this.form.submit()">
+          {% for c in classrooms %}
+          <option value="{{ c.code }}" {% if c.code == selected_room %}selected{% endif %}>{{ c.name }} (ห้อง {{ c.code }})</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% if period_tabs %}
+  <ul class="nav nav-tabs px-3 pt-2 bg-light" id="{{ tab_prefix }}StatsPeriodTabs" role="tablist">
+    {% for pt in period_tabs %}
+    <li class="nav-item" role="presentation">
+      <button class="nav-link fw-semibold small {% if active_period_id == pt.period.id %}active{% elif not active_period_id and forloop.first %}active{% endif %}"
+              id="{{ tab_prefix }}TabBtn{{ pt.period.id }}"
+              data-bs-toggle="tab"
+              data-bs-target="#{{ tab_prefix }}TabPane{{ pt.period.id }}"
+              data-period-id="{{ pt.period.id }}"
+              type="button" role="tab"
+              aria-selected="{% if active_period_id == pt.period.id %}true{% elif not active_period_id and forloop.first %}true{% else %}false{% endif %}">
+        {{ pt.period.name }}
+      </button>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="tab-content" id="{{ tab_prefix }}StatsPeriodContent">
+    {% for pt in period_tabs %}
+    <div class="tab-pane fade {% if active_period_id == pt.period.id %}show active{% elif not active_period_id and forloop.first %}show active{% endif %}"
+         id="{{ tab_prefix }}TabPane{{ pt.period.id }}"
+         role="tabpanel"
+         aria-labelledby="{{ tab_prefix }}TabBtn{{ pt.period.id }}">
+      {% if pt.my_row %}
+      <div class="px-3 py-2 bg-light border-bottom small d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span><i class="bi bi-award-fill text-warning me-1"></i>อันดับของคุณใน<b>{{ pt.period.name }}</b>: <b>#{{ pt.my_row.rank_no }}</b> จาก {{ pt.total_students }} คน</span>
+        <span class="badge bg-primary">{{ pt.my_row.net_pts|floatformat:1 }} / {{ pt.period.max_score|floatformat:0 }} คะแนน ({{ pt.my_row.percent|floatformat:1 }}%)</span>
+      </div>
+      {% endif %}
+      <div style="max-height:{{ max_list_height|default:'460px' }};overflow-y:auto;">
+        <ul class="list-group list-group-flush">
+          {% for row in pt.rows %}
+            {% if row.is_me %}
+            <li class="list-group-item bg-warning-subtle py-2 px-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge {% if row.rank_no <= 3 %}bg-warning text-dark{% else %}bg-dark{% endif %}" style="min-width:34px;">#{{ row.rank_no }}</span>
+                {% if row.student.avatar_url %}
+                  <img src="{{ row.student.avatar_url }}" class="avatar-circle flex-shrink-0" style="width:36px;height:36px;">
+                {% else %}
+                  <span class="avatar-circle flex-shrink-0" style="width:36px;height:36px;font-size:0.85rem;">{{ row.student.avatar_initial }}</span>
+                {% endif %}
+                <div>
+                  <div class="fw-bold small">
+                    {{ row.student.get_full_name }}
+                    <span class="badge bg-primary ms-1">คุณ</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-1" style="font-size:0.74rem;">
+                    <span class="text-muted">เลขที่ {{ row.student.class_number }}</span>
+                    {% if row.rank %}
+                      <span>·</span>
+                      <img src="{{ row.rank.icon_url }}" alt="{{ row.rank.name }}" style="width:20px;height:20px;object-fit:contain;">
+                      <span class="fw-bold" style="color:{{ row.rank.color_hex }};">{{ row.rank.name }}</span>
+                      <span class="text-muted">({{ row.percent|floatformat:1 }}%)</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              <span class="badge bg-success fs-6">{{ row.net_pts|floatformat:1 }} คะแนน</span>
+            </li>
+            {% else %}
+            <li class="list-group-item py-1 px-3 d-flex align-items-center justify-content-between gap-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-light text-dark border" style="min-width:34px;">#{{ row.rank_no }}</span>
+                {% if row.rank %}
+                <img src="{{ row.rank.icon_url }}" alt="{{ row.rank.name }}" style="width:20px;height:20px;object-fit:contain;">
+                {% endif %}
+              </div>
+              <span class="small fw-semibold text-dark">{{ row.net_pts|floatformat:1 }} คะแนน</span>
+            </li>
+            {% endif %}
+          {% empty %}
+            <li class="list-group-item text-center text-muted py-4 small">ไม่มีข้อมูลนักเรียนในห้องนี้</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card-body text-center text-muted py-4 small">ยังไม่มีช่วงคะแนนที่กำหนด</div>
+  {% endif %}
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('#{{ tab_prefix }}StatsPeriodTabs button[data-bs-toggle="tab"]').forEach(function(btn) {
+    btn.addEventListener('shown.bs.tab', function() {
+      const pid = parseInt(btn.getAttribute('data-period-id') || '0', 10);
+      if (!pid) return;
+      if (window.saveStudentUiPref) {
+        const payload = {};
+        payload['{{ pref_key }}'] = pid;
+        window.saveStudentUiPref(payload);
+      }
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('period_id', String(pid));
+        window.history.replaceState({}, '', url.toString());
+      } catch (e) {}
+    });
+  });
+});
+</script>

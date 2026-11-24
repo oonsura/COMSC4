@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}ห้องเกม Bingo - COMSC4{% endblock %}
+{% block page_header %}เลือกห้องเกม Bingo (เล่นพร้อมกันทั้งระดับ &amp; หาผู้ชนะแต่ละห้องต่อเนื่อง){% endblock %}
+{% block content %}
+<div class="row g-3">
+  {% for r in rooms %}
+  <div class="col-md-6 col-lg-4">
+    <div class="card h-100 border-top border-4 border-warning">
+      <div class="card-body d-flex flex-column justify-content-between">
+        <div>
+          <div class="d-flex flex-wrap gap-1 justify-content-between align-items-center mb-2">
+            <div>
+              <span class="badge bg-warning text-dark fw-bold">ตาราง {{ r.size }}×{{ r.size }}</span>
+              {% if r.is_grade_wide %}
+                <span class="badge bg-primary">เล่นพร้อมกันทั้งระดับ</span>
+              {% elif r.classroom %}
+                <span class="badge bg-secondary">{{ r.classroom.name }}</span>
+              {% endif %}
+            </div>
+            <span class="badge {% if r.status == 'playing' %}bg-danger{% else %}bg-success{% endif %}">{{ r.get_status_display }}</span>
+          </div>
+          <h5 class="fw-bold">{{ r.title }}</h5>
+          <div class="small text-muted mb-2">
+            ช่วงตัวเลข: <b>{{ r.number_range }}</b> · รูปแบบชนะ: <b>{{ r.win_patterns }}</b>
+          </div>
+          {% if r.continuous_play %}
+          <div class="small text-success fw-semibold mb-2">
+            <i class="bi bi-infinity me-1"></i>เล่นต่อเนื่อง หาผู้ชนะแต่ละห้องไปเรื่อยๆ จนกว่าครูจะเริ่มใหม่
+          </div>
+          {% endif %}
+          <div class="small text-secondary mb-3">
+            <i class="bi bi-shield-check text-success me-1"></i>เงื่อนไขมุม/กลาง: {{ r.get_special_corner_center_rule_display }}
+          </div>
+        </div>
+        <a href="{% url 'core:student_bingo_play' r.id %}" class="btn btn-primary w-100 fw-bold">
+          <i class="bi bi-controller me-1"></i>เข้าสู่ห้อง Bingo &amp; สร้างตาราง
+        </a>
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="col-12"><div class="alert alert-info">ยังไม่มีห้อง Bingo ที่เปิดอยู่ในขณะนี้</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

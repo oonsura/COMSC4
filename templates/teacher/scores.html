@@ -1,0 +1,470 @@
+{% extends 'base.html' %}
+{% block title %}ตั้งค่าระบบ · ระบบคะแนน & กฎคะแนน - COMSC4{% endblock %}
+{% block page_header %}ตั้งค่าระบบ · ระบบช่วงคะแนน (บวก/ลบ &amp; สรุปคะแนนล็อก) และตารางกฎคะแนน{% endblock %}
+{% block content %}
+{% include 'admin_panel/_settings_nav.html' %}
+<!-- 1. แผงจัดการช่วงคะแนน (ทุกช่วงมีกิจกรรม + คะแนนบวก/ลบ + กดสรุปคะแนนแล้วล็อก) -->
+<div class="card mb-3 border-start border-4 border-primary">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span><i class="bi bi-layers-fill text-primary me-2"></i>ช่วงคะแนนรายวิชา (แต่ละช่วงมีกิจกรรมและคะแนนบวก/ลบ — กดสรุปแล้วจะล็อกไม่ให้บวก/ลบในส่วนนั้น)</span>
+    <button type="button" class="btn btn-sm btn-success fw-bold" data-bs-toggle="modal" data-bs-target="#createPeriodModal">
+      <i class="bi bi-plus-circle me-1"></i>สร้างช่วงคะแนนใหม่
+    </button>
+  </div>
+  <div class="card-body">
+    <!-- แถบเลือกช่วงคะแนน -->
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      {% for p in periods %}
+      <a href="?room={{ selected_room }}&period_id={{ p.id }}"
+         class="btn btn-sm {% if selected_period.id == p.id %}btn-primary fw-bold shadow-sm{% else %}btn-outline-secondary{% endif %}">
+        {% if p.is_finalized %}<i class="bi bi-lock-fill text-warning me-1"></i>{% else %}<i class="bi bi-unlock-fill text-success me-1"></i>{% endif %}
+        ช่วงที่ {{ p.order_no }}: {{ p.name }}
+        <span class="badge bg-light text-dark ms-1">{{ p.activities.count }} กิจกรรม</span>
+        <span class="badge bg-info text-dark ms-1">{% if p.score_calc_mode == 'proportional' %}เฉลี่ยสัดส่วน{% else %}รวมตรงไม่หาร{% endif %}</span>
+        {% if p.is_finalized %}<span class="badge bg-danger ms-1">สรุปแล้ว</span>{% else %}<span class="badge bg-success ms-1">เปิดอยู่</span>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+
+    {% if selected_period %}
+    <div class="row g-3">
+      <!-- รายละเอียดช่วงที่เลือก + ปุ่มสรุปคะแนน (ล็อก) -->
+      <div class="col-lg-6">
+        {% if selected_period.is_finalized %}
+        <div class="alert alert-danger mb-0 h-100 d-flex flex-column justify-content-between">
+          <div>
+            <h6 class="fw-bold"><i class="bi bi-lock-fill me-1"></i>"{{ selected_period.name }}" สรุปคะแนนและล็อกเรียบร้อยแล้ว</h6>
+            <div class="small mb-2">
+              สรุปเมื่อ {{ selected_period.finalized_at|date:"d/m/Y H:i" }} · คะแนนเต็ม {{ selected_period.max_score|floatformat:0 }} คะแนน<br>
+              <b>ไม่สามารถบวก/ลบคะแนน หรือแก้ไขกิจกรรมในช่วงคะแนนนี้ได้อีก</b> กรุณาไปบวก/ลบคะแนนในช่วงคะแนนถัดไป
+            </div>
+          </div>
+          <div>
+            <a href="?room={{ selected_room }}&period_id={{ active_period.id }}" class="btn btn-sm btn-primary fw-bold">
+              <i class="bi bi-arrow-right-circle me-1"></i>ไปยังช่วงคะแนนถัดไปที่เปิดอยู่ ({{ active_period.name }})
+            </a>
+          </div>
+        </div>
+        {% else %}
+        <div class="border rounded-3 p-3 bg-light h-100">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-bold text-primary"><i class="bi bi-sliders me-1"></i>แก้ไข &amp; สรุปช่วงคะแนนปัจจุบัน</span>
+            <div class="d-flex gap-1">
+              <form method="post" onsubmit="return confirm('ยืนยันสรุปคะแนน \"{{ selected_period.name|escapejs }}\"? เมื่อกดสรุปคะแนนแล้ว จะไม่สามารถบวกหรือลบคะแนนในช่วงนี้ได้อีก และต้องไปทำในช่วงถัดไป')">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="finalize_period">
+                <input type="hidden" name="room" value="{{ selected_room }}">
+                <input type="hidden" name="period_id" value="{{ selected_period.id }}">
+                <input type="hidden" name="target_period_id" value="{{ selected_period.id }}">
+                <button type="submit" class="btn btn-sm btn-danger fw-bold">
+                  <i class="bi bi-lock-fill me-1"></i>สรุปคะแนนช่วงนี้ (ล็อกห้ามบวก/ลบ)
+                </button>
+              </form>
+              {% if not selected_period.score_logs.exists %}
+              <form method="post" onsubmit="return confirm('ลบช่วงคะแนนนี้?')">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_period">
+                <input type="hidden" name="room" value="{{ selected_room }}">
+                <input type="hidden" name="period_id" value="{{ selected_period.id }}">
+                <input type="hidden" name="target_period_id" value="{{ selected_period.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+          <form method="post" class="row g-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_period">
+            <input type="hidden" name="room" value="{{ selected_room }}">
+            <input type="hidden" name="period_id" value="{{ selected_period.id }}">
+            <input type="hidden" name="target_period_id" value="{{ selected_period.id }}">
+            <div class="col-5">
+              <label class="form-label small fw-bold mb-0">ชื่อช่วงคะแนน</label>
+              <input type="text" name="name" class="form-control form-control-sm" value="{{ selected_period.name }}" required>
+            </div>
+            <div class="col-2">
+              <label class="form-label small fw-bold mb-0">ลำดับ</label>
+              <input type="number" name="order_no" class="form-control form-control-sm" value="{{ selected_period.order_no }}" min="1" required>
+            </div>
+            <div class="col-2">
+              <label class="form-label small fw-bold mb-0">เต็มช่วง</label>
+              <input type="number" step="0.5" name="max_score" class="form-control form-control-sm" value="{{ selected_period.max_score }}" required>
+            </div>
+            <div class="col-3">
+              <label class="form-label small fw-bold mb-0">วิธีรวมกิจกรรม</label>
+              <select name="score_calc_mode" class="form-select form-select-sm">
+                <option value="direct" {% if selected_period.score_calc_mode != 'proportional' %}selected{% endif %}>รวมตรง (ไม่หาร)</option>
+                <option value="proportional" {% if selected_period.score_calc_mode == 'proportional' %}selected{% endif %}>เฉลี่ยสัดส่วน</option>
+              </select>
+            </div>
+            <div class="col-9">
+              <input type="text" name="note" class="form-control form-control-sm" placeholder="หมายเหตุ" value="{{ selected_period.note }}">
+            </div>
+            <div class="col-3">
+              <button type="submit" class="btn btn-sm btn-primary w-100 fw-bold">บันทึก</button>
+            </div>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- จัดการกิจกรรมในแต่ละช่วง (มีได้มากกว่า 1 กิจกรรม และปรับย้ายไปมาได้) -->
+      <div class="col-lg-6">
+        <div class="border rounded-3 p-3 bg-light h-100">
+          <div class="fw-bold text-dark mb-2">
+            <i class="bi bi-check2-square text-success me-1"></i>กิจกรรมที่อยู่ในช่วงคะแนนนี้ (เลือกปรับได้มากกว่า 1 กิจกรรม)
+          </div>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="assign_period_activities">
+            <input type="hidden" name="room" value="{{ selected_room }}">
+            <input type="hidden" name="period_id" value="{{ selected_period.id }}">
+            <input type="hidden" name="target_period_id" value="{{ selected_period.id }}">
+            <div class="list-group list-group-flush mb-2 border rounded bg-white" style="max-height:140px;overflow-y:auto;">
+              {% for act in all_activities %}
+              <label class="list-group-item d-flex justify-content-between align-items-center py-1 px-2 small">
+                <div>
+                  <input class="form-check-input me-2" type="checkbox" name="activity_ids" value="{{ act.id }}"
+                         {% if act.id in period_activity_ids %}checked{% endif %}
+                         {% if selected_period.is_finalized or act.score_period and act.score_period.is_finalized %}disabled{% endif %}>
+                  <b>{{ act.title }}</b>
+                </div>
+                <span class="badge {% if act.score_period_id == selected_period.id %}bg-primary{% else %}bg-light text-dark border{% endif %}">
+                  {{ act.score_period.name|default:"ยังไม่ระบุช่วง" }}
+                </span>
+              </label>
+              {% empty %}
+              <div class="text-muted text-center py-2 small">ยังไม่มีกิจกรรมในระบบ</div>
+              {% endfor %}
+            </div>
+            {% if not selected_period.is_finalized %}
+            <button type="submit" class="btn btn-sm btn-outline-primary w-100 fw-bold">
+              <i class="bi bi-arrow-left-right me-1"></i>บันทึกการปรับย้ายกิจกรรมเข้า/ออกจากช่วงนี้
+            </button>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- 2. ตารางกฎคะแนน (เพิ่ม แก้ไข ลบ ได้ครบทั้งหมดรวมกฎอัตโนมัติจากเกม) -->
+  <div class="col-lg-5">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-journal-check text-primary me-2"></i>ตารางกฎคะแนน (รวมกฎอัตโนมัติจากระบบเกม)</span>
+        <span class="badge bg-secondary">{{ rules|length }} กฎ</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>ประเภท</th><th>ชื่อกฎคะแนน</th><th>คะแนน</th><th class="text-end">จัดการ (แก้ไข/ลบ)</th></tr>
+            </thead>
+            <tbody>
+              {% for r in rules %}
+              <tr class="{% if not r.is_active %}opacity-50{% endif %}">
+                <td>
+                  {% if r.rule_type == 'plus' %}
+                    <span class="badge bg-success">บวก</span>
+                  {% else %}
+                    <span class="badge bg-danger">ลบ</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="fw-semibold small">
+                    {{ r.name }}
+                    {% if r.is_auto %}<span class="badge bg-info text-dark" style="font-size:0.65rem;">อัตโนมัติ</span>{% endif %}
+                  </div>
+                  <div class="text-muted" style="font-size:0.7rem;">{{ r.note }}</div>
+                </td>
+                <td class="fw-bold {% if r.rule_type == 'plus' %}text-success{% else %}text-danger{% endif %}">
+                  {% if r.rule_type == 'plus' %}+{% else %}-{% endif %}{{ r.points|floatformat:1 }}
+                </td>
+                <td class="text-end text-nowrap">
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2"
+                          onclick="openEditRuleModal({{ r.id }}, '{{ r.name|escapejs }}', '{{ r.rule_type }}', {{ r.points }}, '{{ r.note|escapejs }}', {{ r.is_auto|yesno:'true,false' }}, {{ r.is_active|yesno:'true,false' }})">
+                    <i class="bi bi-pencil-square"></i> แก้ไข
+                  </button>
+                  <form method="post" class="d-inline" onsubmit="return confirm('ยืนยันลบกฎคะแนน \"{{ r.name|escapejs }}\"?')">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete_rule">
+                    <input type="hidden" name="room" value="{{ selected_room }}">
+                    <input type="hidden" name="period_id" value="{{ selected_period.id }}">
+                    <input type="hidden" name="rule_id" value="{{ r.id }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i> ลบ</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card-footer bg-light">
+        <div class="small fw-bold text-primary mb-1"><i class="bi bi-plus-circle me-1"></i>เพิ่มกฎคะแนนใหม่</div>
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_rule">
+          <input type="hidden" name="room" value="{{ selected_room }}">
+          <input type="hidden" name="period_id" value="{{ selected_period.id }}">
+          <div class="col-6">
+            <input type="text" name="name" class="form-control form-control-sm" placeholder="ชื่อกฎคะแนนใหม่" required>
+          </div>
+          <div class="col-3">
+            <select name="rule_type" class="form-select form-select-sm">
+              <option value="plus">บวก (+)</option>
+              <option value="minus">ลบ (-)</option>
+            </select>
+          </div>
+          <div class="col-3">
+            <input type="number" step="0.5" name="points" class="form-control form-control-sm" value="1" required>
+          </div>
+          <div class="col-7">
+            <input type="text" name="note" class="form-control form-control-sm" placeholder="หมายเหตุ (ถ้ามี)">
+          </div>
+          <div class="col-2 d-flex align-items-center">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" name="is_auto" value="1" id="newRuleAuto">
+              <label class="form-check-label small" for="newRuleAuto">Auto</label>
+            </div>
+          </div>
+          <div class="col-3">
+            <button type="submit" class="btn btn-sm btn-primary w-100 fw-bold">เพิ่มกฎ</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ประวัติคะแนนล่าสุดในเซสชัน/ช่วงนี้ -->
+    <div class="card">
+      <div class="card-header small fw-bold"><i class="bi bi-clock-history text-primary me-1"></i>บันทึกคะแนนล่าสุดใน "{{ selected_period.name }}"</div>
+      <div class="card-body p-0" style="max-height:240px;overflow-y:auto;">
+        <table class="table table-sm mb-0">
+          <tbody>
+            {% for log in recent_logs %}
+            <tr>
+              <td class="small"><b>{{ log.student.first_name }}</b> (#{{ log.student.class_number }})<br><span class="text-muted" style="font-size:0.7rem;">{{ log.reason }}</span></td>
+              <td class="text-end fw-bold {% if log.points >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {% if log.points >= 0 %}+{% endif %}{{ log.points|floatformat:1 }}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted small py-3">ยังไม่มีรายการคะแนนในช่วงนี้</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. ให้คะแนนนักเรียนรายบุคคลแยกตามช่วงคะแนน -->
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span><i class="bi bi-people-fill text-success me-2"></i>คะแนนนักเรียน ({{ selected_period.name }})</span>
+        <form method="get" class="d-flex gap-2">
+          <input type="hidden" name="period_id" value="{{ selected_period.id }}">
+          <select name="room" class="form-select form-select-sm fw-bold" onchange="this.form.submit()">
+            {% for c in classrooms %}
+            <option value="{{ c.code }}" {% if c.code == selected_room %}selected{% endif %}>{{ c.name }} (ห้อง {{ c.code }})</option>
+            {% endfor %}
+          </select>
+        </form>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>เลขที่</th>
+                <th>นักเรียน</th>
+                <th class="text-center">กิจกรรม</th>
+                <th class="text-center">บวก(+)</th>
+                <th class="text-center">ลบ(-)</th>
+                <th class="text-center">รวมช่วงนี้</th>
+                <th class="text-center">รวมทั้งหมด</th>
+                <th>บวก/ลบใน "{{ selected_period.name }}"</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in student_rows %}
+              <tr>
+                <td class="fw-bold">{{ row.student.class_number }}</td>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    {% if row.student.avatar_url %}
+                      <img src="{{ row.student.avatar_url }}" class="avatar-circle" style="width:32px;height:32px;">
+                    {% else %}
+                      <span class="avatar-circle" style="width:32px;height:32px;font-size:0.75rem;">{{ row.student.avatar_initial }}</span>
+                    {% endif %}
+                    <div>
+                      <div class="fw-bold small">{{ row.student.get_full_name }}</div>
+                      <div class="text-muted" style="font-size:0.68rem;">{{ row.student.student_id }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td class="text-center small">
+                  {{ row.activity_pts|floatformat:2 }}
+                  {% if selected_period.score_calc_mode == 'proportional' and row.raw_activity_pts != row.activity_pts %}
+                    <div class="text-muted" style="font-size:0.66rem;">(ดิบ {{ row.raw_activity_pts|floatformat:1 }})</div>
+                  {% endif %}
+                </td>
+                <td class="text-center small text-success fw-bold">+{{ row.plus_pts|floatformat:1 }}</td>
+                <td class="text-center small text-danger fw-bold">{{ row.minus_pts|floatformat:1 }}</td>
+                <td class="text-center"><span class="badge bg-primary">{{ row.period_net|floatformat:1 }}</span></td>
+                <td class="text-center"><span class="badge bg-success">{{ row.student.total_score|floatformat:1 }}</span></td>
+                <td>
+                  {% if selected_period.is_finalized %}
+                    <span class="badge bg-danger"><i class="bi bi-lock-fill me-1"></i>สรุปแล้ว</span>
+                  {% else %}
+                    <form method="post" class="d-flex gap-1">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="award_student">
+                      <input type="hidden" name="room" value="{{ selected_room }}">
+                      <input type="hidden" name="period_id" value="{{ selected_period.id }}">
+                      <input type="hidden" name="target_period_id" value="{{ selected_period.id }}">
+                      <input type="hidden" name="student_id" value="{{ row.student.id }}">
+                      <select name="rule_id" class="form-select form-select-sm" style="max-width:170px;">
+                        {% for r in rules %}
+                        {% if r.is_active %}<option value="{{ r.id }}">{{ r }}</option>{% endif %}
+                        {% endfor %}
+                      </select>
+                      <button type="submit" class="btn btn-sm btn-outline-success fw-bold">บันทึก</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal สร้างช่วงคะแนนใหม่ -->
+<div class="modal fade" id="createPeriodModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_period">
+        <input type="hidden" name="room" value="{{ selected_room }}">
+        <div class="modal-header bg-success text-white">
+          <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-1"></i>สร้างช่วงคะแนนใหม่ (ทุกช่วงมีกิจกรรมและบวก/ลบ)</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label small fw-bold">ชื่อช่วงคะแนน</label>
+            <input type="text" name="name" class="form-control" placeholder="เช่น ช่วงคะแนนที่ 3 (ปลายภาค)" required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold">ลำดับช่วงที่</label>
+              <input type="number" name="order_no" class="form-control" value="{{ periods|length|add:'1' }}" min="1" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">คะแนนเต็ม</label>
+              <input type="number" step="0.5" name="max_score" class="form-control" value="20" required>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">วิธีรวมคะแนนกิจกรรม</label>
+            <select name="score_calc_mode" class="form-select">
+              {% for val, lbl in calc_mode_choices %}
+              <option value="{{ val }}" {% if val == 'direct' %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label small fw-bold">หมายเหตุ</label>
+            <input type="text" name="note" class="form-control" placeholder="เช่น รวมกิจกรรมท้ายบทและคะแนนความประพฤติ">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="submit" class="btn btn-success btn-sm fw-bold">สร้างช่วงคะแนน</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal แก้ไขกฎคะแนน -->
+<div class="modal fade" id="editRuleModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_rule">
+        <input type="hidden" name="room" value="{{ selected_room }}">
+        <input type="hidden" name="period_id" value="{{ selected_period.id }}">
+        <input type="hidden" name="rule_id" id="editRuleId">
+        <div class="modal-header bg-primary text-white">
+          <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-1"></i>แก้ไขกฎคะแนน</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label small fw-bold">ชื่อกฎคะแนน</label>
+            <input type="text" name="name" id="editRuleName" class="form-control" required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-bold">ประเภท</label>
+              <select name="rule_type" id="editRuleType" class="form-select">
+                <option value="plus">บวก (+)</option>
+                <option value="minus">ลบ (-)</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">ค่าคะแนน</label>
+              <input type="number" step="0.5" name="points" id="editRulePoints" class="form-control" required>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">หมายเหตุ</label>
+            <input type="text" name="note" id="editRuleNote" class="form-control">
+          </div>
+          <div class="d-flex gap-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_auto" value="1" id="editRuleAuto">
+              <label class="form-check-label small fw-bold" for="editRuleAuto">ระบบให้อัตโนมัติ (เกม/กิจกรรม)</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_active" value="1" id="editRuleActive" checked>
+              <label class="form-check-label small fw-bold" for="editRuleActive">เปิดใช้งานกฎนี้</label>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+          <button type="submit" class="btn btn-primary btn-sm fw-bold">บันทึกการแก้ไข</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let editRuleModalInst = null;
+function openEditRuleModal(id, name, rtype, pts, note, isAuto, isActive) {
+  document.getElementById('editRuleId').value = id;
+  document.getElementById('editRuleName').value = name;
+  document.getElementById('editRuleType').value = rtype;
+  document.getElementById('editRulePoints').value = pts;
+  document.getElementById('editRuleNote').value = note;
+  document.getElementById('editRuleAuto').checked = !!isAuto;
+  document.getElementById('editRuleActive').checked = !!isActive;
+  if (!editRuleModalInst) editRuleModalInst = new bootstrap.Modal(document.getElementById('editRuleModal'));
+  editRuleModalInst.show();
+}
+</script>
+{% endblock %}

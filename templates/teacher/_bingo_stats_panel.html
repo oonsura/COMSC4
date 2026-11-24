@@ -1,0 +1,186 @@
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      {% if active_tab %}<input type="hidden" name="tab" value="stats">{% endif %}
+      {% if room %}<input type="hidden" name="room_filter" value="{{ selected_room_filter }}">{% endif %}
+      <div class="col-md-3">
+        <label class="form-label small fw-bold mb-1">กรองตามห้องเรียน</label>
+        <select name="classroom" class="form-select form-select-sm">
+          <option value="">รวมทุกห้องเรียน</option>
+          {% for c in classrooms %}
+          <option value="{{ c.code }}" {% if c.code == stats_selected_classroom %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-bold mb-1">กรองตามกลุ่มเรียน</label>
+        <input type="text" name="group" class="form-control form-control-sm" placeholder="ชื่อกลุ่ม" value="{{ stats_selected_group }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small fw-bold mb-1">เลือกห้อง Bingo</label>
+        <select name="bingo_room_id" class="form-select form-select-sm">
+          {% for br in stats_bingo_rooms %}
+          <option value="{{ br.id }}" {% if stats_selected_room_obj and br.id == stats_selected_room_obj.id %}selected{% endif %}>{{ br.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100 fw-bold"><i class="bi bi-funnel me-1"></i>วิเคราะห์สถิติ</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-fire text-danger me-2"></i>ตัวเลขที่ถูกเปิดบ่อย</div>
+      <div class="card-body">
+        {% for num, cnt in stats_all_freq %}
+        <div class="d-flex align-items-center justify-content-between border-bottom py-1">
+          <span class="fw-bold">หมายเลข <span class="badge bg-primary fs-6">{{ num }}</span></span>
+          <span class="small text-muted">ถูกเปิด <b>{{ cnt }}</b> ครั้ง</span>
+        </div>
+        {% empty %}
+        <div class="text-muted text-center py-3">ยังไม่มีข้อมูลการเปิดตัวเลข</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-hand-index-thumb-fill text-success me-2"></i>สถิติการเลือกเลขของนักเรียน</div>
+      <div class="card-body">
+        {% for num, cnt in stats_student_pick_freq %}
+        <div class="d-flex align-items-center justify-content-between border-bottom py-1">
+          <span class="fw-bold">หมายเลข <span class="badge bg-success fs-6">{{ num }}</span></span>
+          <span class="small text-muted">นักเรียนเลือก <b>{{ cnt }}</b> ครั้ง</span>
+        </div>
+        {% empty %}
+        <div class="text-muted text-center py-3">ยังไม่มีรายการที่นักเรียนเลือก</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-eye-slash-fill text-warning me-2"></i>ตัวเลขที่เปิดแล้ว &amp; ยังไม่ถูกเปิด · {{ stats_selected_room_obj.title|default:"-" }}</div>
+      <div class="card-body">
+        <div class="small text-muted mb-2">ตัวเลขที่ถูกเปิดไปแล้ว · {{ stats_opened_in_selected|length }} เลข</div>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+          {% for n in stats_opened_in_selected %}
+          <span class="badge bg-success">{{ n }}</span>
+          {% empty %}
+          <span class="text-muted small">ยังไม่มีเลขที่เปิด</span>
+          {% endfor %}
+        </div>
+        <div class="small text-muted mb-2">ตัวเลขที่ยังไม่ถูกเปิด · {{ stats_unopened_numbers|length }} เลข</div>
+        <div class="d-flex flex-wrap gap-1">
+          {% for n in stats_unopened_numbers %}
+          <span class="badge bg-secondary-subtle text-dark border">{{ n }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-trophy-fill text-warning me-2"></i>สถิติผู้ชนะ Bingo แยกตามห้องและกลุ่ม</div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-6">
+            <h6 class="small fw-bold text-primary">แยกตามห้องเรียน</h6>
+            <ul class="list-group list-group-flush">
+              {% for item in stats_winners_by_room %}
+              <li class="list-group-item d-flex justify-content-between px-0 py-1 small">
+                <span>ห้อง {{ item.student__room_code|default:"-" }}</span>
+                <span class="badge bg-warning text-dark">{{ item.total }} คน</span>
+              </li>
+              {% empty %}
+              <li class="list-group-item text-muted small px-0">ยังไม่มีผู้ชนะ</li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="col-6">
+            <h6 class="small fw-bold text-success">แยกตามกลุ่มเรียน</h6>
+            <ul class="list-group list-group-flush">
+              {% for item in stats_winners_by_group %}
+              <li class="list-group-item d-flex justify-content-between px-0 py-1 small">
+                <span>{{ item.student__group_name|default:"-" }}</span>
+                <span class="badge bg-success">{{ item.total }} คน</span>
+              </li>
+              {% empty %}
+              <li class="list-group-item text-muted small px-0">ยังไม่มีผู้ชนะ</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if stats_drawn_by_room_summary or stats_recent_draws_with_hits %}
+<div class="row g-3 mt-1">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-building-check text-primary me-2"></i>เลขที่ออกไปแล้วแยกตามแต่ละห้อง</div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:300px;overflow-y:auto;">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>ห้อง</th><th>เลขที่ออกไปแล้ว</th><th class="text-end">ชนะ/ตาราง</th></tr>
+            </thead>
+            <tbody>
+              {% for rb in stats_drawn_by_room_summary %}
+              <tr>
+                <td class="small fw-bold">{{ rb.room_label }}</td>
+                <td>
+                  {% for num in rb.effective_numbers %}
+                    <span class="badge bg-success me-1">{{ num }}</span>
+                  {% empty %}
+                    <span class="text-muted small">-</span>
+                  {% endfor %}
+                </td>
+                <td class="text-end small">{{ rb.winners_count }}/{{ rb.cards_count }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><i class="bi bi-people-fill text-success me-2"></i>ประวัติการออกเลขพร้อมจำนวนนักเรียนที่ได้รับ</div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:300px;overflow-y:auto;">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>เลข</th><th>ขอบเขตห้อง</th><th>รูปแบบ</th><th>คนได้รับเลข</th><th>เวลา</th></tr>
+            </thead>
+            <tbody>
+              {% for d in stats_recent_draws_with_hits %}
+              <tr>
+                <td><span class="badge bg-primary fs-6">{{ d.number }}</span></td>
+                <td class="small">{% if d.target_room_code == 'all' %}ทั้งระดับ{% else %}ห้อง {{ d.target_room_code }}{% endif %}</td>
+                <td class="small">{{ d.get_drawn_by_mode_display }}</td>
+                <td class="small fw-bold">{{ d.hit_count }} / {{ d.eligible_cards_count }} คน</td>
+                <td class="small text-muted">{{ d.created_at|date:"H:i:s" }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3 small">ยังไม่มีประวัติการออกเลข</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}

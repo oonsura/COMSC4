@@ -1,0 +1,358 @@
+{% extends 'base.html' %}
+{% block title %}ตรวจสอบการส่งงาน & อนุมัติคำร้อง - COMSC4{% endblock %}
+{% block page_header %}ตรวจสอบการส่งงานทั้งหมด · ให้คะแนนตามรอบการตรวจ · อนุมัติคำร้อง &amp; Export{% endblock %}
+{% block content %}
+<!-- 1. คำร้องขอส่งงานล่าช้าที่รออนุมัติ (เปิดสิทธิ์เฉพาะรายบุคคล ปิดภายใน 2 วัน) -->
+{% if pending_requests %}
+<div class="card mb-3 border-danger shadow-sm">
+  <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center py-2">
+    <span class="fw-bold"><i class="bi bi-envelope-exclamation-fill me-2"></i>คำร้องขอส่งงานล่าช้าที่รออนุมัติ ({{ pending_requests|length }} รายการ)</span>
+    <span class="badge bg-warning text-dark">อนุมัติแล้วเปิดให้ส่งเฉพาะรายบุคคล (ปิดภายใน 2 วัน)</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>นักเรียน</th>
+            <th>ใบงาน / กิจกรรม</th>
+            <th>เหตุผลของนักเรียน</th>
+            <th>กำหนดปิด / อนุมัติ (เฉพาะคนนี้)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in pending_requests %}
+          <tr>
+            <td class="small">
+              <div class="fw-bold">{{ req.student.get_full_name }}</div>
+              <div class="text-muted">{{ req.student.room_display }} เลขที่ {{ req.student.class_number }} · {{ req.student.student_id }}</div>
+            </td>
+            <td class="small fw-bold text-primary">{{ req.activity.title }}</td>
+            <td class="small">{{ req.reason|default:"-" }}</td>
+            <td>
+              <div class="d-flex flex-wrap gap-1 align-items-center">
+                <form method="post" class="d-inline m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="approve_extension">
+                  <input type="hidden" name="back_qs" value="{{ current_qs }}">
+                  <input type="hidden" name="request_id" value="{{ req.id }}">
+                  <button type="submit" class="btn btn-sm btn-success fw-bold">
+                    <i class="bi bi-check2-circle me-1"></i>อนุมัติ (ปิดภายใน 2 วัน)
+                  </button>
+                </form>
+                <form method="post" class="d-inline-flex gap-1 align-items-center m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="approve_extension">
+                  <input type="hidden" name="back_qs" value="{{ current_qs }}">
+                  <input type="hidden" name="request_id" value="{{ req.id }}">
+                  <input type="datetime-local" name="approved_until" class="form-control form-control-sm" style="width:185px;" value="{{ default_two_days }}">
+                  <button type="submit" class="btn btn-sm btn-outline-success fw-bold">กำหนดเอง</button>
+                </form>
+                <form method="post" class="d-inline m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="reject_extension">
+                  <input type="hidden" name="back_qs" value="{{ current_qs }}">
+                  <input type="hidden" name="request_id" value="{{ req.id }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">ไม่อนุมัติ</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- 2. แถบ Filter หลากหลาย + ปุ่ม Export ตาม Filter (เป็นห้อง หรือ ทั้งหมด) -->
+<div class="card mb-3 border-start border-4 border-primary shadow-sm">
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end mb-3">
+      <div class="col-md-2">
+        <label class="small fw-bold mb-0">ชั้น / ห้องเรียน:</label>
+        <select name="room" class="form-select form-select-sm fw-bold border-primary" onchange="this.form.submit()">
+          <option value="all" {% if selected_room == 'all' %}selected{% endif %}>ทุกชั้น / ทุกห้อง (ทั้งหมด)</option>
+          {% if grade_levels %}
+          <optgroup label="ทั้งระดับชั้น">
+            {% for g in grade_levels %}
+            {% with gkey="grade:"|add:g %}
+            <option value="{{ gkey }}" {% if selected_room == gkey %}selected{% endif %}>ระดับชั้น ม.{{ g }} ทั้งหมด</option>
+            {% endwith %}
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          <optgroup label="เลือกเฉพาะห้อง">
+            {% for c in classrooms %}
+            <option value="{{ c.code }}" {% if selected_room == c.code %}selected{% endif %}>{{ c.name }} ({{ c.code }})</option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="small fw-bold mb-0">ช่วงคะแนน:</label>
+        <select name="period_id" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="all" {% if selected_period_id == 'all' %}selected{% endif %}>ทุกช่วงคะแนน</option>
+          {% for p in periods %}
+          <option value="{{ p.id }}" {% if selected_period_id|stringformat:'s' == p.id|stringformat:'s' %}selected{% endif %}>ช่วง {{ p.order_no }}: {{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="small fw-bold mb-0">ใบงาน / กิจกรรม:</label>
+        <select name="activity_id" class="form-select form-select-sm fw-bold" onchange="this.form.submit()">
+          <option value="all" {% if selected_activity_id == 'all' %}selected{% endif %}>ทุกกิจกรรม</option>
+          {% for act in all_activities %}
+          <option value="{{ act.id }}" {% if selected_activity_id|stringformat:'s' == act.id|stringformat:'s' %}selected{% endif %}>{{ act.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="small fw-bold mb-0">สถานะการส่ง:</label>
+        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="all" {% if selected_status == 'all' %}selected{% endif %}>ทั้งหมด</option>
+          <option value="ungraded" {% if selected_status == 'ungraded' %}selected{% endif %}>ส่งแล้ว (ยังไม่ตรวจ)</option>
+          <option value="graded" {% if selected_status == 'graded' %}selected{% endif %}>ตรวจแล้ว</option>
+          <option value="missing" {% if selected_status == 'missing' %}selected{% endif %}>ยังไม่ส่งงาน</option>
+          <option value="late" {% if selected_status == 'late' %}selected{% endif %}>ส่งช้า / เลยกำหนด</option>
+          <option value="submitted" {% if selected_status == 'submitted' %}selected{% endif %}>ส่งงานแล้วทั้งหมด</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="small fw-bold mb-0">ค้นหานักเรียน (ชื่อ/รหัส/เลขที่):</label>
+        <div class="input-group input-group-sm">
+          <input type="text" name="q" class="form-control" value="{{ search_q }}" placeholder="ค้นหา...">
+          <button type="submit" class="btn btn-primary fw-bold"><i class="bi bi-search"></i></button>
+        </div>
+      </div>
+    </form>
+
+    <!-- สรุปตัวเลข + ปุ่ม Export ตาม Filter -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-2 border-top">
+      <div class="d-flex flex-wrap gap-2 small">
+        <span class="badge bg-dark">ขอบเขต: {{ selected_room_label }}</span>
+        <span class="badge bg-secondary">แสดง {{ summary.filtered_rows }} รายการ</span>
+        <span class="badge bg-success">ส่งแล้ว {{ summary.submitted_count }}</span>
+        <span class="badge bg-warning text-dark">ยังไม่ตรวจ {{ summary.ungraded_count }}</span>
+        <span class="badge bg-danger">ยังไม่ส่ง {{ summary.missing_count }}</span>
+        {% if summary.late_count %}<span class="badge bg-danger-subtle text-danger border border-danger-subtle">ส่งช้า/เลยกำหนด {{ summary.late_count }}</span>{% endif %}
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'core:teacher_submissions_export' %}?{{ current_qs }}&fmt=xlsx" class="btn btn-sm btn-success fw-bold">
+          <i class="bi bi-file-earmark-excel-fill me-1"></i>Export Excel ({{ selected_room_label }})
+        </a>
+        <a href="{% url 'core:teacher_submissions_export' %}?{{ current_qs }}&fmt=csv" class="btn btn-sm btn-outline-success fw-bold">
+          <i class="bi bi-filetype-csv me-1"></i>Export CSV
+        </a>
+      </div>
+    </div>
+
+    {% if activity_round_summaries %}
+    <div class="d-flex flex-wrap gap-2 mt-2 pt-2 border-top align-items-center small">
+      <span class="fw-bold text-primary"><i class="bi bi-clock-history me-1"></i>ครั้งที่การตรวจของกิจกรรม:</span>
+      {% for ars in activity_round_summaries %}
+      <span class="badge bg-light text-dark border border-primary-subtle px-2 py-1">
+        <b>{{ ars.activity.title|truncatechars:26 }}</b>:
+        ตรวจแล้ว <span class="text-success fw-bold">{{ ars.graded_rounds_count }}</span> ครั้ง
+        · ถัดไป <span class="text-primary fw-bold">ครั้งที่ {{ ars.next_round_no }}</span> (+{{ ars.next_score|floatformat:1 }} คะแนน)
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- 3. แถบกดให้คะแนนที่ครูยังไม่ตรวจ -->
+<div class="card mb-3 bg-warning-subtle border-warning shadow-sm">
+  <div class="card-body py-2">
+    <form method="post" class="d-flex flex-wrap justify-content-between align-items-center gap-2"
+          onsubmit="return confirm('ยืนยันให้คะแนนผลงานที่ยังไม่ได้ตรวจในตัวกรองนี้?')">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="grade_all_ungraded">
+      <input type="hidden" name="room" value="{{ selected_room }}">
+      <input type="hidden" name="period_id" value="{{ selected_period_id }}">
+      <input type="hidden" name="activity_id" value="{{ selected_activity_id }}">
+      <input type="hidden" name="status" value="{{ selected_status }}">
+      <input type="hidden" name="q" value="{{ search_q }}">
+      <input type="hidden" name="back_qs" value="{{ current_qs }}">
+      <input type="hidden" name="use_override_score" id="useOverrideScoreInput" value="0">
+
+      <div class="d-flex flex-wrap align-items-center gap-2 small">
+        <span class="fw-bold text-dark"><i class="bi bi-award-fill text-danger me-1"></i>ให้คะแนนที่ยังไม่ตรวจ:</span>
+        <div class="d-inline-flex align-items-center gap-1 bg-white border rounded px-2 py-1">
+          <span class="fw-bold text-secondary">คะแนนเต็ม</span>
+          <input type="text" class="form-control form-control-sm text-center fw-bold bg-light" style="width:54px;"
+                 value="{{ selected_full_score|floatformat:0 }}" readonly disabled>
+        </div>
+        <div class="d-inline-flex align-items-center gap-1 bg-white border rounded px-2 py-1">
+          <span class="fw-bold text-primary">คะแนนที่ได้รับ</span>
+          <input type="number" step="1" min="0" name="override_score" id="bulkAwardScoreInput"
+                 class="form-control form-control-sm text-center fw-bold text-success bg-light" style="width:62px;"
+                 value="{{ selected_next_score_int }}" readonly>
+          <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 fw-bold" id="btnEnableBulkScoreEdit"
+                  onclick="enableBulkScoreEdit()">
+            <i class="bi bi-pencil-fill me-1"></i>แก้ไข
+          </button>
+        </div>
+
+        {% if not selected_activity_obj or not selected_activity_obj.is_group_activity %}
+          <div class="d-inline-flex flex-wrap align-items-center gap-2 bg-info-subtle border border-info-subtle rounded px-2 py-1">
+            <span class="fw-bold text-primary">เงื่อนไขเพิ่มเติม (เฉพาะรอบตรวจนี้):</span>
+            {% if has_existing_groups %}
+            <label class="form-check form-check-inline mb-0 small fw-bold" style="cursor:pointer;">
+              <input class="form-check-input" type="checkbox" name="consider_group" value="1" id="chkConsiderGroup">
+              พิจารณาแบบกลุ่ม
+            </label>
+            <select name="group_source_activity_id" class="form-select form-select-sm" style="width:auto;max-width:190px;">
+              <option value="">กลุ่มล่าสุดของห้อง</option>
+              {% for ga in group_source_activities %}
+              <option value="{{ ga.id }}">{{ ga.title|truncatechars:22 }}</option>
+              {% endfor %}
+            </select>
+            {% endif %}
+            <label class="form-check form-check-inline mb-0 small fw-bold" style="cursor:pointer;">
+              <input class="form-check-input" type="checkbox" name="consider_material_check" value="1" id="chkConsiderMaterial">
+              พิจารณาตรวจสอบ
+            </label>
+            <input type="date" name="check_date" class="form-control form-control-sm" style="width:auto;" value="{{ selected_check_date }}">
+          </div>
+        {% endif %}
+      </div>
+
+      <button type="submit" class="btn btn-sm btn-success fw-bold px-3 {% if summary.ungraded_count == 0 %}disabled{% endif %}">
+        <i class="bi bi-check2-all me-1"></i>ให้คะแนนที่ยังไม่ตรวจ ({{ summary.ungraded_count }} รายการ)
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- 4. ตารางรายการส่งงานทั้งหมดตาม Filter -->
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>ห้อง / เลขที่</th>
+            <th>รหัส · นักเรียน</th>
+            <th>ใบงาน / กิจกรรม</th>
+            <th>สถานะ</th>
+            <th class="text-center">ครั้งที่ตรวจ</th>
+            <th>เวลาส่ง &amp; ผลงาน</th>
+            <th>คะแนน</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in rows %}
+          <tr class="{% if not item.submission %}table-light{% elif item.submission.score_awarded == None %}table-warning bg-opacity-25{% endif %}">
+            <td class="small fw-bold text-nowrap">{{ item.student.room_display }} #{{ item.student.class_number }}</td>
+            <td class="small">
+              <b>{{ item.student.get_full_name }}</b>
+              <div class="text-muted" style="font-size:0.72rem;">{{ item.student.student_id }}</div>
+            </td>
+            <td class="small">
+              <div class="fw-semibold text-primary">{{ item.activity.title }}</div>
+              <div class="text-muted" style="font-size:0.72rem;">{{ item.activity.score_period.name|default:"-" }} · เต็ม {{ item.activity.max_score|floatformat:0 }}</div>
+            </td>
+            <td>
+              {% if not item.submission %}
+                <span class="badge {% if item.is_late %}bg-danger{% else %}bg-secondary{% endif %}">{{ item.status_label }}</span>
+              {% elif item.submission.score_awarded == None %}
+                <span class="badge bg-warning text-dark">{{ item.status_label }}</span>
+              {% else %}
+                <span class="badge bg-success">{{ item.status_label }}</span>
+              {% endif %}
+              {% if item.active_ext %}
+                <div class="text-success fw-bold" style="font-size:0.68rem;">ขยายถึง {{ item.active_ext.approved_until|date:"d/m H:i" }}</div>
+              {% endif %}
+            </td>
+            <td class="text-center small text-nowrap">
+              {% if item.submission and item.graded_round_no %}
+                <span class="badge bg-primary">ครั้งที่ {{ item.graded_round_no }}</span>
+              {% elif item.submission %}
+                <span class="badge bg-warning text-dark">รอตรวจ (ครั้งที่ {{ item.activity_next_round }})</span>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td class="small">
+              {% if item.submission %}
+                <div class="text-muted" style="font-size:0.72rem;">{{ item.submission.submitted_at|date:"d/m/Y H:i" }}</div>
+                <div class="text-truncate" style="max-width:220px;">
+                  {% if item.submission.work_file %}<a href="{{ item.submission.work_file.url }}" target="_blank" class="me-1"><i class="bi bi-paperclip"></i>{{ item.submission.effective_file_label|default:"ดูไฟล์" }}</a>{% endif %}
+                  {% if item.submission.gdrive_file_url %}<a href="{{ item.submission.gdrive_file_url }}" target="_blank" class="badge bg-success-subtle text-success border border-success-subtle text-decoration-none me-1"><i class="bi bi-cloud-check"></i> Drive</a>{% endif %}
+                  {{ item.submission.work_text|default:item.submission.work_title }}
+                </div>
+                {% if item.submission.similarity_warning %}
+                  <div class="badge bg-danger mt-1 text-wrap text-start"><i class="bi bi-exclamation-triangle-fill me-1"></i>คล้ายเพื่อน {{ item.submission.similarity_score|floatformat:2 }}</div>
+                {% elif item.submission.ai_review_status == 'warning' and item.submission.ai_review_feedback %}
+                  <div class="badge bg-warning text-dark mt-1 text-wrap text-start">{{ item.submission.ai_review_feedback|truncatechars:45 }}</div>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if item.submission %}
+                {% if item.submission.score_awarded != None %}
+                  <span class="badge bg-success fs-6">{{ item.submission.score_awarded|floatformat:0 }}</span>
+                {% else %}
+                  <form method="post" class="d-flex gap-1 align-items-center m-0">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="grade_single_submission">
+                    <input type="hidden" name="back_qs" value="{{ current_qs }}">
+                    <input type="hidden" name="submission_id" value="{{ item.submission.id }}">
+                    <input type="number" step="1" min="0" name="score_awarded" id="rowScoreInp_{{ item.submission.id }}"
+                           class="form-control form-control-sm text-center fw-bold bg-light" style="width:58px;"
+                           value="{{ item.activity_next_score|floatformat:0 }}" readonly>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1"
+                            onclick="unlockRowScoreInput({{ item.submission.id }}, this)" title="แก้ไขคะแนน">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button type="submit" class="btn btn-sm btn-primary py-0 px-2 fw-bold">ให้</button>
+                  </form>
+                {% endif %}
+              {% else %}
+                <span class="text-muted small">-</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">ไม่พบข้อมูลที่ตรงกับตัวกรอง</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+function enableBulkScoreEdit() {
+  const inp = document.getElementById('bulkAwardScoreInput');
+  const hid = document.getElementById('useOverrideScoreInput');
+  const btn = document.getElementById('btnEnableBulkScoreEdit');
+  if (!inp) return;
+  const nowLocked = inp.hasAttribute('readonly');
+  if (nowLocked) {
+    inp.removeAttribute('readonly');
+    inp.classList.remove('bg-light');
+    if (hid) hid.value = '1';
+    if (btn) btn.innerHTML = '<i class="bi bi-check2 me-1"></i>ใช้ค่าที่แก้';
+    inp.focus();
+  } else {
+    inp.setAttribute('readonly', 'readonly');
+    inp.classList.add('bg-light');
+    if (hid) hid.value = '1';
+    if (btn) btn.innerHTML = '<i class="bi bi-pencil-fill me-1"></i>แก้ไข';
+  }
+}
+function unlockRowScoreInput(subId, btn) {
+  const inp = document.getElementById(`rowScoreInp_${subId}`);
+  if (!inp) return;
+  inp.removeAttribute('readonly');
+  inp.classList.remove('bg-light');
+  if (btn) btn.classList.add('d-none');
+  inp.focus();
+}
+</script>
+{% endblock %}

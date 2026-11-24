@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}บทเรียน - COMSC4{% endblock %}
+{% block page_header %}(ฝั่งครู) บทเรียน &amp; แบบสอบถามท้ายบท{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card mb-3">
+      <div class="card-header bg-primary text-white">
+        <i class="bi bi-robot me-2"></i>สร้างแบบทดสอบ / แบบสอบถามประจำบทเรียน (AI)
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="generate_ai_quiz">
+          <div class="mb-2">
+            <label class="form-label small fw-bold">สังกัดบทเรียน</label>
+            <select name="lesson_id" class="form-select form-select-sm fw-semibold">
+              {% for l in lessons %}
+              <option value="{{ l.id }}">หน่วยที่ {{ l.unit_number }}: {{ l.title }}</option>
+              {% empty %}
+              <option value="">(สร้างบทเรียนก่อนหรือผูกภายหลัง)</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">ชื่อแบบทดสอบ / แบบสอบถาม</label>
+            <input type="text" name="title" class="form-control form-control-sm" placeholder="เช่น แบบทดสอบหลังเรียน เรื่อง Sorting Algorithms" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">หัวข้อ / คำสั่ง Prompt ให้ AI สร้างโจทย์</label>
+            <textarea name="topic_prompt" rows="2" class="form-control form-control-sm" placeholder="เช่น Bubble Sort, Selection Sort, Insertion Sort และแนวคิดเชิงคำนวณ ม.4" required></textarea>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-bold">จำนวนข้อ</label>
+              <input type="number" name="question_count" class="form-control form-control-sm" value="5" min="1" max="15">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-bold">คะแนนต่อข้อ</label>
+              <input type="number" step="0.5" name="points_per_question" class="form-control form-control-sm" value="1.0">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm w-100 fw-bold">
+            <i class="bi bi-magic me-1"></i>ให้ AI สร้างชุดข้อสอบทันที
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="bi bi-journal-plus text-success me-2"></i>เพิ่มเนื้อหาบทเรียนใหม่</div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_lesson">
+          <div class="row g-2 mb-2">
+            <div class="col-4">
+              <label class="form-label small fw-bold">หน่วยที่</label>
+              <input type="number" name="unit_number" class="form-control form-control-sm" value="2">
+            </div>
+            <div class="col-8">
+              <label class="form-label small fw-bold">ชื่อเรื่อง</label>
+              <input type="text" name="title" class="form-control form-control-sm" required>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">สรุปเนื้อหา</label>
+            <input type="text" name="summary" class="form-control form-control-sm">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">เนื้อหาบทเรียน</label>
+            <textarea name="content_html" rows="3" class="form-control form-control-sm"></textarea>
+          </div>
+          <button type="submit" class="btn btn-success btn-sm w-100 fw-bold">บันทึกบทเรียน</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-card-checklist text-primary me-2"></i>รายการแบบทดสอบ AI ในระบบ</div>
+      <div class="card-body">
+        {% for qz in quizzes %}
+        <div class="border rounded p-3 mb-2">
+          <div class="d-flex justify-content-between">
+            <div class="fw-bold">{{ qz.title }}</div>
+            <span class="badge bg-info text-dark">{{ qz.ai_engine_used }}</span>
+          </div>
+          <div class="small text-muted">{{ qz.questions.count }} ข้อ · ผู้เข้าสอบแล้ว {{ qz.attempts.count }} ครั้ง</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="bi bi-bar-chart-fill text-warning me-2"></i>ประวัติและสถิติการทำแบบทดสอบของนักเรียน (พร้อมรูปประจำตัว)</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>นักเรียน</th><th>แบบทดสอบ</th><th>ตอบถูก</th><th>เวลา</th><th class="text-end">คะแนน</th></tr>
+            </thead>
+            <tbody>
+              {% for a in attempts %}
+              <tr>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    {% if a.student.avatar_url %}
+                      <img src="{{ a.student.avatar_url }}" class="avatar-circle" style="width:32px;height:32px;">
+                    {% else %}
+                      <span class="avatar-circle" style="width:32px;height:32px;font-size:0.75rem;">{{ a.student.avatar_initial }}</span>
+                    {% endif %}
+                    <span class="small fw-semibold">{{ a.student.get_full_name }} ({{ a.student.room_display }})</span>
+                  </div>
+                </td>
+                <td class="small">{{ a.quiz.title }}</td>
+                <td class="small">{{ a.correct_count }}/{{ a.total_questions }}</td>
+                <td class="small">{{ a.time_spent_seconds }}s</td>
+                <td class="text-end"><span class="badge bg-success">{{ a.score }}/{{ a.max_score }}</span></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3">ยังไม่มีนักเรียนทำแบบทดสอบ</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

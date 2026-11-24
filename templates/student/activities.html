@@ -1,0 +1,535 @@
+{% extends 'base.html' %}
+{% load comsc4_tags %}
+{% block title %}กิจกรรม - COMSC4{% endblock %}
+{% block page_header %}กิจกรรมของฉัน ({{ room_display_label }}){% endblock %}
+{% block extra_css %}
+<style>
+  .my-student-drag-box {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0.45rem 0.85rem;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #fff;
+    font-weight: 700;
+    cursor: grab;
+    box-shadow: 0 3px 10px rgba(37, 99, 235, 0.25);
+    user-select: none;
+  }
+  .my-student-drag-box:active { cursor: grabbing; }
+  .group-dropzone-card {
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    background: #fff;
+    transition: border-color 0.15s, background-color 0.15s;
+    min-height: 125px;
+  }
+  .group-dropzone-card.is-mine-group {
+    border: 2px solid #16a34a;
+    background: #f0fdf4;
+  }
+  .group-dropzone-card.drag-over {
+    border-color: #2563eb;
+    background: #eff6ff;
+  }
+  .group-member-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.25rem 0.5rem;
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+  }
+  .group-member-chip.is-me {
+    background: #dbeafe;
+    border-color: #60a5fa;
+    font-weight: 700;
+    color: #1e3a8a;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<!-- แจ้งเตือนงานค้างของนักเรียน -->
+{% if pending_activities %}
+<div class="alert alert-warning border-2 border-warning shadow-sm d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <div class="fw-bold text-dark"><i class="bi bi-bell-fill text-danger me-1"></i>แจ้งเตือนงานค้างของคุณ ({{ pending_activities|length }} กิจกรรม)</div>
+    <div class="d-flex flex-wrap gap-1 mt-1">
+      {% for pa in pending_activities %}
+      <a href="#actCard_{{ pa.id }}" class="badge bg-danger text-white text-decoration-none px-2 py-1">
+        {{ pa.title|truncatechars:32 }} {% if pa.due_date %}(ส่งภายใน {{ pa.due_date|date:"d/m H:i" }}){% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-success border-success-subtle shadow-sm py-2 mb-3">
+  <i class="bi bi-check-circle-fill me-1"></i>ยอดเยี่ยม! คุณส่งครบทุกกิจกรรมแล้ว ({{ activities|length }}/{{ activities|length }})
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span><i class="bi bi-easel2-fill text-primary me-2"></i>รายการกิจกรรม &amp; ส่งผลงานของฉัน ({{ room_display_label }})</span>
+    <div class="d-flex flex-wrap gap-1 align-items-center">
+      <a href="{% url 'core:student_activities' %}?activity_id=all" class="btn btn-sm py-0 px-2 {% if not selected_filter_activity_id %}btn-primary fw-bold{% else %}btn-outline-secondary{% endif %}">ทั้งหมด ({{ activities|length }})</a>
+      {% for a_tab in activities %}
+      <a href="?activity_id={{ a_tab.id }}" class="btn btn-sm py-0 px-2 {% if selected_filter_activity_id == a_tab.id %}btn-primary fw-bold{% else %}btn-outline-secondary{% endif %}">
+        {{ a_tab.title|truncatechars:20 }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="alert alert-light border py-2 px-3 small mb-3 text-muted">
+      <i class="bi bi-shield-lock-fill text-success me-1"></i>ระบบแสดงเฉพาะใบงาน คำตอบ และสถานะของตัวคุณเอง (ไม่แสดงผลงานของนักเรียนคนอื่น)
+    </div>
+
+    {% for act in activities %}
+    {% with sub=my_subs|get_item:act.id %}
+    <div id="actCard_{{ act.id }}"
+         class="border rounded-3 p-3 mb-4 {% if sub %}border-success-subtle bg-success-subtle bg-opacity-10{% elif selected_filter_activity_id == act.id %}border-2 border-primary bg-white{% else %}bg-white{% endif %}"
+         {% if act.is_group_activity %}style="background-color:#fefce8 !important; border-color:#fde047 !important;"{% endif %}>
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+        <div>
+          <span class="badge {% if act.activity_type == 'qa' %}bg-primary{% elif act.activity_type == 'image' %}bg-success{% elif act.activity_type == 'other_file' %}bg-dark{% else %}bg-secondary{% endif %} mb-1">
+            {% if act.activity_type == 'qa' %}<i class="bi bi-chat-dots-fill me-1"></i>{% elif act.activity_type == 'image' %}<i class="bi bi-image-fill me-1"></i>{% elif act.activity_type == 'other_file' %}<i class="bi bi-file-earmark-arrow-up-fill me-1"></i>{% endif %}
+            {{ act.get_activity_type_display }}
+          </span>
+          <span class="badge bg-light text-dark border mb-1">ปี {{ act.academic_year|default:"2569" }}</span>
+          {% if act.storage_destination == 'gdrive' and act.gdrive_verified %}
+            <span class="badge bg-success-subtle text-success border border-success-subtle mb-1">
+              <i class="bi bi-cloud-check-fill me-1"></i>เก็บใน Google Drive
+            </span>
+          {% endif %}
+          {% if act.allowed_file_extensions %}
+            <span class="badge bg-info-subtle text-dark border mb-1">รับไฟล์: {{ act.allowed_file_extensions }}</span>
+          {% endif %}
+          {% if act.is_group_activity %}
+            <span class="badge text-dark border border-warning mb-1" style="background:#fef08a;">
+              <i class="bi bi-people-fill text-primary me-1"></i>
+              กิจกรรมกลุ่ม (แบ่ง {{ act.groups_data|length }} กลุ่ม)
+            </span>
+          {% endif %}
+          {% if not sub %}
+            <span class="badge bg-danger mb-1">งานค้าง</span>
+          {% endif %}
+          <h5 class="fw-bold mb-0">{{ act.title }}</h5>
+        </div>
+        <div class="d-flex flex-wrap gap-1 align-items-center">
+          <span class="badge bg-success-subtle text-success border border-success-subtle" title="จำนวนนักเรียนในห้องที่ส่งแล้ว">
+            ส่งแล้ว {{ act.room_submitted_count }}/{{ act.room_total_students }} คน
+          </span>
+          {% if act.score_period %}<span class="badge bg-info text-dark">{{ act.score_period.name }}</span>{% endif %}
+          <span class="badge bg-primary">{{ act.max_score|floatformat:0 }} คะแนน</span>
+        </div>
+      </div>
+
+      <div class="alert alert-light border py-2 px-3 small mb-2">
+        {% if act.content_html %}
+          <div class="worksheet-rich-body mb-1">{{ act.content_html|safe }}</div>
+        {% else %}
+          <b class="text-primary">คำชี้แจง / โจทย์:</b> {{ act.description|default:"-" }}
+        {% endif %}
+        {% if act.due_date %}
+          <div class="text-muted mt-1" style="font-size:0.75rem;"><i class="bi bi-clock me-1"></i>กำหนดส่ง: {{ act.due_date|date:"d/m/Y H:i" }}</div>
+        {% endif %}
+      </div>
+
+      {% if act.worksheet_pdf %}
+      <div class="border rounded p-2 mb-2 bg-light">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="small fw-bold text-danger"><i class="bi bi-file-earmark-pdf-fill me-1"></i>เอกสารประกอบใบงาน (PDF)</span>
+          <a href="{{ act.worksheet_pdf.url }}" target="_blank" download class="btn btn-sm btn-outline-primary py-0 px-2">
+            <i class="bi bi-download me-1"></i>ดาวน์โหลด PDF
+          </a>
+        </div>
+        {% if act.pdf_display_mode == 'embed' %}
+          <iframe src="{{ act.worksheet_pdf.url }}" style="width:100%; height:260px; border:1px solid #cbd5e1; border-radius:6px;"></iframe>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if act.is_group_activity %}
+      <!-- บอร์ดลากกล่องตัวเองจับกลุ่ม (พื้นหลังสีเหลืองอ่อน · เรียงสมาชิกตามเลขที่) -->
+      <div class="border rounded-3 p-3 mb-3" id="groupBoardWrap_{{ act.id }}"
+           style="background-color:#fefce8; border:2px solid #fde047 !important;"
+           data-activity-id="{{ act.id }}"
+           data-open="{% if act.group_selection_open %}1{% else %}0{% endif %}">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+          <div>
+            <h6 class="fw-bold text-primary mb-0">
+              <i class="bi bi-people-fill me-1"></i>จัดกลุ่มกิจกรรม (แบ่งเป็น {{ act.groups_data|length }} กลุ่ม · ลากกล่องชื่อของคุณไปวางในกลุ่ม)
+            </h6>
+            <div class="small text-muted">ดูจำนวนสมาชิกสูงสุดของแต่ละกลุ่มได้ที่ป้ายมุมขวาของกลุ่ม · สมาชิกในกลุ่มเรียงตามเลขที่อัตโนมัติ</div>
+          </div>
+          <div>
+            {% if act.group_selection_open %}
+              <span class="badge bg-success"><i class="bi bi-unlock-fill me-1"></i>เปิดให้จับกลุ่ม / ย้ายกลุ่มได้</span>
+            {% else %}
+              <span class="badge bg-danger"><i class="bi bi-lock-fill me-1"></i>ครูปิดระบบจับกลุ่มแล้ว</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if act.group_selection_open %}
+        <div class="mb-3 d-flex flex-wrap align-items-center gap-2">
+          <div class="my-student-drag-box" draggable="true"
+               ondragstart="onMyStudentBoxDragStart(event, {{ act.id }})">
+            <i class="bi bi-arrows-move"></i>
+            <span>กล่องของคุณ: #{{ user.class_number }} {{ user.get_full_name }}</span>
+          </div>
+          <span class="small text-muted">ลากกล่องสีน้ำเงินนี้ไปวางในกลุ่มด้านล่าง หรือกดปุ่ม "เข้ากลุ่มนี้" ได้เช่นกัน</span>
+          {% if act.my_group %}
+          <button type="button" class="btn btn-sm btn-outline-danger ms-auto fw-bold" onclick="moveStudentToGroup({{ act.id }}, '')">
+            <i class="bi bi-box-arrow-left me-1"></i>ออกจากกลุ่มปัจจุบัน
+          </button>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="row g-2" id="groupDropzonesRow_{{ act.id }}">
+          {% for g in act.groups_data %}
+          <div class="col-md-6 col-xl-3">
+            <div class="group-dropzone-card p-2 h-100 d-flex flex-column {% if g.is_mine %}is-mine-group{% endif %}"
+                 data-activity-id="{{ act.id }}"
+                 data-group-id="{{ g.id }}"
+                 {% if act.group_selection_open %}
+                 ondragover="onGroupZoneDragOver(event)"
+                 ondragleave="onGroupZoneDragLeave(event)"
+                 ondrop="onGroupZoneDrop(event, {{ act.id }}, {{ g.id }})"
+                 {% endif %}>
+              <div class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom">
+                <span class="fw-bold small {% if g.is_mine %}text-success{% else %}text-dark{% endif %}">{{ g.name }}</span>
+                <span class="badge {% if g.is_full %}bg-danger{% elif g.is_mine %}bg-success{% else %}bg-warning text-dark{% endif %}">
+                  {{ g.count }}/{{ g.max_size }} คน (ไม่เกิน {{ g.max_size }} คน)
+                </span>
+              </div>
+              <div class="flex-grow-1">
+                {% for m in g.members %}
+                <div class="group-member-chip {% if m.is_me %}is-me{% endif %}">
+                  <span class="badge bg-dark">#{{ m.class_number }}</span>
+                  <span class="text-truncate">{{ m.full_name }}</span>
+                </div>
+                {% empty %}
+                <div class="text-muted small text-center py-2">ลากกล่องตัวเองมาวางที่นี่</div>
+                {% endfor %}
+              </div>
+              {% if act.group_selection_open and not g.is_mine and not g.is_full %}
+              <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-1 py-0 fw-bold"
+                      onclick="moveStudentToGroup({{ act.id }}, {{ g.id }})">
+                เข้ากลุ่มนี้
+              </button>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if act.revealed_answers %}
+      <div class="mb-2">
+        <button type="button" class="btn btn-sm btn-warning fw-bold text-dark shadow-sm" data-bs-toggle="modal" data-bs-target="#studentAnswerModal_{{ act.id }}">
+          <i class="bi bi-key-fill me-1"></i>ดูเฉลยใบงาน ({{ act.revealed_answers|length }} ข้อ)
+        </button>
+      </div>
+      <div class="modal fade" id="studentAnswerModal_{{ act.id }}" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header bg-warning text-dark py-2">
+              <h6 class="modal-title fw-bold"><i class="bi bi-key-fill me-1"></i>เฉลยใบงาน: {{ act.title }}</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+              {% for ak in act.revealed_answers %}
+              <div class="border rounded-3 p-3 mb-2 bg-light">
+                <h6 class="fw-bold text-primary mb-2">ข้อที่ {{ ak.order_no }}: {{ ak.title }}</h6>
+                <div class="bg-white border rounded p-2 mb-2">{{ ak.content_html|default:"-"|safe }}</div>
+                {% if ak.pdf_file %}
+                  <a href="{{ ak.pdf_file.url }}" target="_blank" download class="btn btn-sm btn-outline-danger py-0 px-2 mb-2">
+                    <i class="bi bi-download me-1"></i>ดาวน์โหลด PDF เฉลยข้อนี้
+                  </a>
+                  {% if ak.pdf_display_mode == 'embed' %}
+                  <iframe src="{{ ak.pdf_file.url }}" style="width:100%; height:240px; border:1px solid #cbd5e1; border-radius:6px;"></iframe>
+                  {% endif %}
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if sub %}
+      <div class="d-flex align-items-center gap-2 mb-2 small text-success fw-semibold">
+        <i class="bi bi-check-circle-fill"></i>
+        <span>คุณส่งงานนี้แล้วเมื่อ {{ sub.submitted_at|date:"d/m/Y H:i" }}</span>
+      </div>
+      {% if sub.similarity_warning %}
+      <div class="alert alert-danger py-1 px-2 small mb-2">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i><b>คำเตือนคำตอบคล้ายเพื่อน:</b> {{ sub.similarity_warning }}
+      </div>
+      {% endif %}
+      {% if sub.ai_review_feedback %}
+      <div class="alert {% if sub.ai_review_status == 'warning' %}alert-warning{% else %}alert-info{% endif %} py-1 px-2 small mb-2">
+        <i class="bi bi-stars me-1"></i><b>ผลตรวจเบื้องต้นจาก AI:</b> {{ sub.ai_review_feedback }}
+      </div>
+      {% endif %}
+      {% endif %}
+
+      {% if sub and sub.work_file or sub and sub.gdrive_file_url %}
+      <div class="mb-2">
+        {% if sub.work_file and sub.is_image_file %}
+        <button type="button" class="btn p-0 border-0 bg-transparent"
+                onclick="openStudentImgPreview('{{ sub.work_file.url|escapejs }}', '{{ act.title|escapejs }}', '{{ sub.work_text|escapejs }}')">
+          <img src="{{ sub.work_file.url }}" class="rounded border shadow-sm" style="max-height:110px;">
+        </button>
+        {% else %}
+        <div class="border rounded p-2 bg-light d-flex flex-wrap align-items-center justify-content-between gap-2 small">
+          <div>
+            <i class="bi bi-file-earmark-check-fill text-primary me-1"></i>
+            <b>{{ sub.effective_file_label|default:"ไฟล์ผลงานแนบ" }}</b>
+            {% if sub.file_size_display %}<span class="text-muted ms-1">({{ sub.file_size_display }})</span>{% endif %}
+          </div>
+          <div class="d-flex gap-1">
+            {% if sub.work_file %}
+            <a href="{{ sub.work_file.url }}" target="_blank" download class="btn btn-sm btn-outline-primary py-0 px-2">
+              <i class="bi bi-download me-1"></i>เปิด / ดาวน์โหลด
+            </a>
+            {% endif %}
+            {% if sub.gdrive_file_url %}
+            <a href="{{ sub.gdrive_file_url }}" target="_blank" class="btn btn-sm btn-outline-success py-0 px-2">
+              <i class="bi bi-cloud-check-fill me-1"></i>Google Drive
+            </a>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if sub and sub.score_awarded != None %}
+        <div class="alert alert-success py-1 px-2 small mb-2">
+          ตรวจแล้ว{% if sub.graded_round_no %} (ครั้งที่ {{ sub.graded_round_no }}){% endif %}: ได้ <b>{{ sub.score_awarded }}/{{ act.max_score|floatformat:0 }} คะแนน</b> ({{ sub.feedback|default:"ดีมาก" }})
+        </div>
+      {% endif %}
+
+      {% if act.access.is_extended %}
+      <div class="alert alert-success py-1 px-2 small mb-2">
+        <i class="bi bi-unlock-fill me-1"></i>ครูอนุมัติคำร้องให้คุณส่งงานได้ถึง <b>{{ act.access.active_ext.approved_until|date:"d/m/Y H:i" }}</b>
+      </div>
+      {% endif %}
+
+      {% if act.access.is_locked %}
+      <div class="alert alert-secondary py-2 px-3 small mb-2">
+        <div class="fw-bold text-danger mb-1"><i class="bi bi-lock-fill me-1"></i>{{ act.access.lock_reason }}</div>
+        {% if act.access.latest_ext and act.access.latest_ext.status == 'pending' %}
+          <div class="badge bg-warning text-dark">ส่งคำร้องขอส่งงานล่าช้าแล้ว — รอครูอนุมัติ</div>
+        {% else %}
+          {% if act.access.latest_ext and act.access.latest_ext.status == 'rejected' %}
+            <div class="text-danger mb-1">คำร้องก่อนหน้าไม่ได้รับอนุมัติ {% if act.access.latest_ext.teacher_note %}({{ act.access.latest_ext.teacher_note }}){% endif %}</div>
+          {% endif %}
+          <form method="post" class="mt-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="request_extension">
+            <input type="hidden" name="activity_id" value="{{ act.id }}">
+            <div class="input-group input-group-sm">
+              <input type="text" name="reason" class="form-control" placeholder="ระบุเหตุผลที่ขอส่งงานล่าช้า..." required>
+              <button type="submit" class="btn btn-outline-primary fw-bold">ส่งคำร้องขอส่งงาน</button>
+            </div>
+          </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <form method="post" enctype="multipart/form-data" id="submitWorkForm_{{ act.id }}"
+            onsubmit="return handleStudentActivitySubmit(event, {{ act.id }})">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="submit_work">
+        <input type="hidden" name="activity_id" value="{{ act.id }}">
+        <div class="mb-2">
+          <input type="text" name="work_title" id="workTitleInput_{{ act.id }}" class="form-control form-control-sm fw-semibold"
+                 oninput="resetStudentAiConfirm({{ act.id }})"
+                 placeholder="{% if act.activity_type == 'qa' %}หัวข้อคำตอบสั้นๆ (เช่น คำตอบ: 1 + 1 = 2){% elif act.activity_type == 'image' %}ชื่อผลไม้ / หัวข้อภาพ (เช่น แอปเปิ้ล, แตงโม){% else %}หัวข้อผลงานของคุณ{% endif %}"
+                 value="{{ sub.work_title }}">
+        </div>
+        <div class="mb-2">
+          <textarea name="work_text" id="workTextInput_{{ act.id }}" rows="2" class="form-control form-control-sm"
+                    oninput="resetStudentAiConfirm({{ act.id }})"
+                    placeholder="{% if act.activity_type == 'qa' %}พิมพ์คำตอบของคุณที่นี่...{% elif act.activity_type == 'image' %}ระบุชื่อผลไม้และเหตุผลสั้นๆ ที่ชื่นชอบ...{% else %}อธิบายแนวคิด / โค้ดโปรแกรม / ลิงก์ผลงาน{% endif %}">{{ sub.work_text }}</textarea>
+        </div>
+        <div id="aiCheckResult_{{ act.id }}" class="d-none mb-2"></div>
+        <div class="input-group input-group-sm">
+          <input type="file" name="work_file" id="workFileInput_{{ act.id }}" class="form-control"
+                 onchange="resetStudentAiConfirm({{ act.id }})"
+                 {% if act.allowed_file_extensions %}accept="{{ act.allowed_file_extensions }}"{% elif act.activity_type == 'image' %}accept="image/*"{% endif %}>
+          <button type="button" class="btn btn-outline-primary fw-bold" onclick="runStudentAiCheck({{ act.id }}, false)">
+            <i class="bi bi-stars me-1"></i>ตรวจสอบคำตอบด้วย AI
+          </button>
+          <button type="submit" id="submitWorkBtn_{{ act.id }}" class="btn btn-success fw-bold px-3">
+            {% if sub %}อัปเดตคำตอบ{% else %}ส่งผลงาน{% endif %}
+          </button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+    {% endwith %}
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Modal ขยายภาพผลงานของตนเอง -->
+<div class="modal fade" id="studentImgModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2 bg-primary text-white">
+        <h6 class="modal-title fw-bold" id="studentImgTitle">ภาพผลงานนักเรียน</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center p-3">
+        <img id="studentImgEl" src="" alt="ผลงานนักเรียน" class="img-fluid rounded border shadow-sm mb-2" style="max-height:360px;">
+        <p class="small text-muted mb-0" id="studentImgDesc"></p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF_TOKEN = '{{ csrf_token }}';
+let draggedActivityId = null;
+
+function openStudentImgPreview(url, title, desc) {
+  const img = document.getElementById('studentImgEl');
+  const t = document.getElementById('studentImgTitle');
+  const d = document.getElementById('studentImgDesc');
+  if (img) img.src = url;
+  if (t) t.innerText = title || 'ภาพผลงานนักเรียน';
+  if (d) d.innerText = desc || '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('studentImgModal')).show();
+}
+
+function onMyStudentBoxDragStart(ev, actId) {
+  draggedActivityId = actId;
+  if (ev.dataTransfer) {
+    ev.dataTransfer.effectAllowed = 'move';
+    ev.dataTransfer.setData('text/plain', String(actId));
+  }
+}
+
+function onGroupZoneDragOver(ev) {
+  ev.preventDefault();
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+  ev.currentTarget.classList.add('drag-over');
+}
+
+function onGroupZoneDragLeave(ev) {
+  ev.currentTarget.classList.remove('drag-over');
+}
+
+function onGroupZoneDrop(ev, actId, groupId) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag-over');
+  if (draggedActivityId && draggedActivityId !== actId) return;
+  moveStudentToGroup(actId, groupId);
+}
+
+function moveStudentToGroup(actId, groupId) {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('group_id', groupId === null || groupId === undefined ? '' : String(groupId));
+  fetch(`/api/activities/${actId}/group-move/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        alert(data.error || 'ไม่สามารถย้ายกลุ่มได้');
+        return;
+      }
+      window.location.href = `?activity_id=${actId}#actCard_${actId}`;
+      window.location.reload();
+    })
+    .catch(() => alert('เกิดข้อผิดพลาดระหว่างจัดกลุ่ม'));
+}
+
+function resetStudentAiConfirm(actId) {
+  const form = document.getElementById(`submitWorkForm_${actId}`);
+  const btn = document.getElementById(`submitWorkBtn_${actId}`);
+  if (form) form.dataset.aiConfirmed = '';
+  if (btn && btn.dataset.origLabel) btn.textContent = btn.dataset.origLabel;
+}
+
+function renderAiCheckFeedback(actId, data) {
+  const box = document.getElementById(`aiCheckResult_${actId}`);
+  if (!box) return;
+  const parts = [];
+  const isWarn = (!data.is_sufficient || !data.is_relevant);
+  parts.push(
+    `<div class="alert ${isWarn ? 'alert-warning' : 'alert-success'} py-1 px-2 small mb-1">`
+    + `<i class="bi bi-stars me-1"></i><b>${data.ai_engine || 'AI'}:</b> ${data.ai_feedback || ''}`
+    + `</div>`
+  );
+  if (data.is_similar && data.similarity_warning) {
+    parts.push(
+      `<div class="alert alert-danger py-1 px-2 small mb-0 fw-bold">`
+      + `<i class="bi bi-exclamation-triangle-fill me-1"></i>${data.similarity_warning}`
+      + `</div>`
+    );
+  }
+  box.innerHTML = parts.join('');
+  box.classList.remove('d-none');
+}
+
+function runStudentAiCheck(actId, fromSubmit) {
+  const titleEl = document.getElementById(`workTitleInput_${actId}`);
+  const textEl = document.getElementById(`workTextInput_${actId}`);
+  const fileEl = document.getElementById(`workFileInput_${actId}`);
+  const form = document.getElementById(`submitWorkForm_${actId}`);
+  const btn = document.getElementById(`submitWorkBtn_${actId}`);
+  if (btn && !btn.dataset.origLabel) btn.dataset.origLabel = btn.textContent.trim();
+
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+  fd.append('work_title', titleEl ? titleEl.value : '');
+  fd.append('work_text', textEl ? textEl.value : '');
+  fd.append('has_file', (fileEl && fileEl.files && fileEl.files.length > 0) ? '1' : '0');
+
+  return fetch(`/api/activities/${actId}/ai-check/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      renderAiCheckFeedback(actId, data);
+      if (fromSubmit && form) {
+        const needsConfirm = (data.status === 'warning') && (form.dataset.aiConfirmed !== '1');
+        if (needsConfirm) {
+          form.dataset.aiConfirmed = '1';
+          if (btn) btn.textContent = 'ยืนยันส่งผลงาน';
+        } else {
+          form.dataset.aiConfirmed = '1';
+          form.submit();
+        }
+      }
+    })
+    .catch(() => {
+      if (fromSubmit && form) {
+        form.dataset.aiConfirmed = '1';
+        form.submit();
+      }
+    });
+}
+
+function handleStudentActivitySubmit(ev, actId) {
+  const form = document.getElementById(`submitWorkForm_${actId}`);
+  if (!form || form.dataset.aiConfirmed === '1') return true;
+  ev.preventDefault();
+  runStudentAiCheck(actId, true);
+  return false;
+}
+</script>
+{% endblock %}

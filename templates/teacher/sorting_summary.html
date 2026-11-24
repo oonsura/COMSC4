@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+{% block title %}สรุปคะแนนกิจกรรมเรียงลำดับ: {{ activity.title }}{% endblock %}
+{% block page_header %}สรุปอันดับคะแนน &amp; มอบคะแนนบวกผู้เล่นสูงสุด Top X ({{ activity.title }}){% endblock %}
+{% block content %}
+<div class="card mb-3 bg-warning-subtle border-warning">
+  <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+    <div>
+      <h5 class="fw-bold mb-1">
+        <i class="bi bi-award-fill text-danger me-1"></i>โหมดสอบและให้คะแนนผู้เล่นสูงสุด X คนแรก (เซสชัน #{{ activity.session_no }})
+        <span class="badge bg-info text-dark ms-1">ขอบเขต: {{ selected_room_label }}</span>
+      </h5>
+      <div class="small text-dark">
+        ระบบคัดเลือกและให้คะแนน<b>เฉพาะชั้น/ห้องที่เลือก ({% if selected_room %}{{ selected_room_label }}{% else %}ทุกชั้น/ห้อง{% endif %})</b> เท่านั้น (เรียง {{ activity.top_x_reward }} อันดับสูงสุด)
+      </div>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <form method="get" class="d-flex align-items-center gap-1">
+        <label class="small fw-bold mb-0">ชั้น/ห้อง:</label>
+        <select name="room" class="form-select form-select-sm fw-bold border-primary" style="min-width:170px;" onchange="this.form.submit()">
+          <option value="" {% if not selected_room %}selected{% endif %}>ทุกชั้น / ทุกห้อง (ทั้งหมด)</option>
+          {% if grade_levels %}
+          <optgroup label="เลือกทั้งระดับชั้น">
+            {% for g in grade_levels %}
+            {% with gkey="grade:"|add:g %}
+            <option value="{{ gkey }}" {% if selected_room == gkey %}selected{% endif %}>ระดับชั้น ม.{{ g }} ทั้งหมด</option>
+            {% endwith %}
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          <optgroup label="เลือกเฉพาะห้องเรียน">
+            {% for c in classrooms %}
+            <option value="{{ c.code }}" {% if selected_room == c.code %}selected{% endif %}>{{ c.name }} (ห้อง {{ c.code }})</option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </form>
+      <a href="{% url 'core:teacher_sorting_export_csv' activity.id %}{% if selected_room %}?room={{ selected_room|urlencode }}{% endif %}" class="btn btn-success btn-sm fw-bold">
+        <i class="bi bi-filetype-csv me-1"></i>Export CSV
+      </a>
+      <form method="post" class="d-flex align-items-center gap-2">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="reward_top_x">
+        <input type="hidden" name="room" value="{{ selected_room }}">
+        <div class="input-group input-group-sm" style="width:195px;">
+          <span class="input-group-text fw-bold">ให้คะแนน</span>
+          <input type="text" inputmode="numeric" pattern="[0-9]*" name="top_x_reward"
+                 value="{{ activity.top_x_reward|default:5 }}"
+                 class="form-control fw-bold text-center" required aria-label="จำนวนคนสูงสุด">
+          <span class="input-group-text fw-bold">คน สูงสุด</span>
+        </div>
+        <button type="submit" class="btn btn-danger btn-sm fw-bold">
+          <i class="bi bi-gift-fill me-1"></i>ให้คะแนนคนสูงสุด ({{ selected_room_label }})
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- สถานะผู้เล่นทั้งหมด (ออนไลน์ / กำลังทำ / เสร็จแล้ว) แบบ Real-time -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-broadcast text-warning me-2"></i>สถานะนักเรียนสด (ListBox1)</span>
+        <span class="badge bg-warning text-dark" id="playingCountBadge">{{ live_data.online_count|default:0 }} คน</span>
+      </div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush" id="livePlayingList">
+          {% for p in live_data.players %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-bold small">{{ p.room }} #{{ p.number }} {{ p.name }}</div>
+              <div class="small {% if p.state == 'playing' %}text-primary{% elif p.state == 'completed' %}text-success{% else %}text-muted{% endif %}">{{ p.status_text }}</div>
+            </div>
+            {% if p.state == 'playing' %}<span class="spinner-grow spinner-grow-sm text-success"></span>{% endif %}
+          </li>
+          {% empty %}
+          <li class="list-group-item text-center text-muted py-4">ยังไม่มีนักเรียนเชื่อมต่อในขณะนี้</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ตารางอันดับคะแนนสูงสุด (listBox2) -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-trophy-fill text-warning me-2"></i>อันดับคะแนนสะสมสูงสุด ({{ selected_room_label }})</span>
+        <a href="/teacher/sorting/?activity_id={{ activity.id }}{% if selected_room %}&room={{ selected_room|urlencode }}{% endif %}" class="btn btn-sm btn-outline-primary">ไปหน้าควบคุม PLAY</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>อันดับ</th>
+                <th>นักเรียน</th>
+                <th>ห้อง / เลขที่</th>
+                <th>จำนวนรอบ</th>
+                <th>เวลาล่าสุด</th>
+                <th>ผิดล่าสุด</th>
+                <th class="text-end">คะแนนสะสม</th>
+                <th class="text-end">สถานะโบนัส</th>
+              </tr>
+            </thead>
+            <tbody id="liveCompletedBody">
+              {% for c in live_data.leaderboard %}
+              <tr class="{% if c.rank <= activity.top_x_reward %}table-warning{% endif %}">
+                <td class="fw-bold">#{{ c.rank }}</td>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    {% if c.avatar %}
+                      <img src="{{ c.avatar }}" class="avatar-circle" style="width:34px;height:34px;">
+                    {% else %}
+                      <span class="avatar-circle" style="width:34px;height:34px;font-size:0.8rem;">{{ c.initial }}</span>
+                    {% endif %}
+                    <div>
+                      <div class="fw-bold small">{{ c.name }}</div>
+                      <div class="text-muted" style="font-size:0.72rem;">รหัส {{ c.student_id }} · {{ c.algorithm_detail }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td class="small">{{ c.room }} เลขที่ {{ c.number }}</td>
+                <td class="small">{{ c.play_round_no }} รอบ</td>
+                <td class="small">{{ c.time_used }} วินาที</td>
+                <td class="small text-danger fw-bold">{{ c.attempts }} ครั้ง</td>
+                <td class="text-end"><span class="badge bg-success fs-6">{{ c.cumulative_score|floatformat:2 }}</span></td>
+                <td class="text-end">
+                  {% if c.is_top_rewarded %}
+                    <span class="badge bg-primary"><i class="bi bi-check2-all me-1"></i>ได้รับคะแนนบวกแล้ว</span>
+                  {% elif c.rank <= activity.top_x_reward %}
+                    <span class="badge bg-warning text-dark">Top {{ activity.top_x_reward }}</span>
+                  {% else %}
+                    <span class="text-muted small">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="8" class="text-center text-muted py-4">ยังไม่มีประวัติคะแนนในเซสชันนี้</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const ACT_ID = {{ activity.id }};
+const TOP_X = {{ activity.top_x_reward }};
+const SELECTED_ROOM = '{{ selected_room|escapejs }}';
+setInterval(() => {
+  fetch(`/api/sorting/${ACT_ID}/live-board/?room=${encodeURIComponent(SELECTED_ROOM)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      document.getElementById('playingCountBadge').innerText = `${data.online_count} คน`;
+      const pList = document.getElementById('livePlayingList');
+      if (data.players && data.players.length > 0) {
+        pList.innerHTML = data.players.map(p => `
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-bold small">${p.room} #${p.number} ${p.name}</div>
+              <div class="small ${p.state === 'playing' ? 'text-primary' : (p.state === 'completed' ? 'text-success' : 'text-muted')}">${p.status_text}</div>
+            </div>
+            ${p.state === 'playing' ? '<span class="spinner-grow spinner-grow-sm text-success"></span>' : ''}
+          </li>
+        `).join('');
+      }
+      const cBody = document.getElementById('liveCompletedBody');
+      if (data.leaderboard && data.leaderboard.length > 0) {
+        cBody.innerHTML = data.leaderboard.map(c => `
+          <tr class="${c.rank <= TOP_X ? 'table-warning' : ''}">
+            <td class="fw-bold">#${c.rank}</td>
+            <td><b class="small">${c.name}</b> <span class="text-muted small">(${c.student_id})</span></td>
+            <td class="small">${c.room} เลขที่ ${c.number}</td>
+            <td class="small">${c.play_round_no} รอบ</td>
+            <td class="small">${c.time_used} วินาที</td>
+            <td class="small text-danger fw-bold">${c.attempts} ครั้ง</td>
+            <td class="text-end"><span class="badge bg-success fs-6">${c.cumulative_score.toFixed(2)}</span></td>
+            <td class="text-end">
+              ${c.is_top_rewarded ? '<span class="badge bg-primary">ได้รับคะแนนบวกแล้ว</span>' : (c.rank <= TOP_X ? `<span class="badge bg-warning text-dark">Top ${TOP_X}</span>` : '-')}
+            </td>
+          </tr>
+        `).join('');
+      }
+    });
+}, 2500);
+</script>
+{% endblock %}

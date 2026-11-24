@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}สถิติ Bingo - COMSC4{% endblock %}
+{% block page_header %}สถิติเกม Bingo แยกห้อง/กลุ่ม{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <a href="{% url 'core:teacher_bingo_manage' %}" class="btn btn-sm btn-outline-primary fw-bold">
+    <i class="bi bi-arrow-left me-1"></i>กลับหน้าวงล้อ Bingo
+  </a>
+</div>
+{% include 'teacher/_bingo_stats_panel.html' %}
+{% endblock %}

@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% block title %}แดชบอร์ดผู้ดูแล / ครูผู้สอน - COMSC4{% endblock %}
+{% block page_header %}แดชบอร์ดผู้ดูแล / ครูผู้สอน ({{ user.get_full_name }}){% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#0f4c5c,#1a759f);">
+      <div class="small opacity-75">นักเรียนทั้งหมดในระบบ</div>
+      <div class="fs-2 fw-bold">{{ total_students }} คน</div>
+      <div class="small mt-1">{{ total_classrooms }} ห้องเรียน (ม.4/1 – ม.4/14)</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#1d4ed8,#1e3a8a);">
+      <div class="small opacity-75">กิจกรรมเรียงลำดับ</div>
+      <div class="fs-2 fw-bold">{{ active_sorting }} รอบ</div>
+      <a href="{% url 'core:teacher_sorting_manage' %}" class="text-white small text-decoration-underline">จัดการ DSBasicSorting →</a>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#b45309,#d97706);">
+      <div class="small opacity-75">ห้องเกม Bingo</div>
+      <div class="fs-2 fw-bold">{{ active_bingo }} ห้อง</div>
+      <a href="{% url 'core:teacher_bingo_manage' %}" class="text-white small text-decoration-underline">หมุนวงล้อ &amp; ดูสถิติ Bingo →</a>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#15803d,#166534);">
+      <div class="small opacity-75">ID LOTTO</div>
+      <div class="fs-2 fw-bold">{{ recent_lotto|length }} รายการ</div>
+      <a href="{% url 'core:teacher_lotto_manage' %}" class="text-white small text-decoration-underline">เปิดสล็อตสุ่มนักเรียน →</a>
+    </div>
+  </div>
+</div>
+
+<!-- แสดงนักเรียนที่ Login เข้าสู่ระบบอยู่ขณะนี้แบบชัดเจน -->
+<div class="card mb-3 border-start border-4 border-success">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-broadcast text-success me-2"></i>นักเรียนที่ Login เข้ามาในระบบขณะนี้ ({{ online_students_count }} คน)</span>
+    <a href="{% url 'core:teacher_attendance' %}" class="btn btn-sm btn-success fw-bold">
+      <i class="bi bi-grid-3x3-gap-fill me-1"></i>ดูในแผนผังห้องเรียน &amp; เช็คหนังสือ/สมุด
+    </a>
+  </div>
+  <div class="card-body py-2">
+    <div class="d-flex flex-wrap gap-2">
+      {% for sess in online_sessions %}
+      <a href="{% url 'core:teacher_attendance' %}?classroom_id={{ sess.user.classroom_id|default:'' }}"
+         class="badge bg-success-subtle text-success border border-success-subtle text-decoration-none py-2 px-2">
+        ● {{ sess.user.room_display }} #{{ sess.user.class_number }} {{ sess.user.get_full_name }} ({{ sess.last_active|date:"H:i" }})
+      </a>
+      {% empty %}
+      <span class="small text-muted">ยังไม่มีนักเรียนที่ Login อยู่ในขณะนี้</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-clock-history text-primary me-2"></i>ประวัติการให้คะแนนอัตโนมัติและคะแนนจากครูผู้สอนล่าสุด</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>เวลา</th><th>นักเรียน</th><th>รายละเอียดคะแนน</th><th>ที่มา</th><th class="text-end">คะแนน</th></tr>
+            </thead>
+            <tbody>
+              {% for log in recent_score_logs %}
+              <tr>
+                <td class="small text-muted">{{ log.created_at|date:"d/m H:i" }}</td>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    {% if log.student.avatar_url %}
+                      <img src="{{ log.student.avatar_url }}" class="avatar-circle" style="width:34px;height:34px;">
+                    {% else %}
+                      <span class="avatar-circle" style="width:34px;height:34px;font-size:0.8rem;">{{ log.student.avatar_initial }}</span>
+                    {% endif %}
+                    <div>
+                      <div class="fw-bold small">{{ log.student.get_full_name }}</div>
+                      <div class="text-muted" style="font-size:0.72rem;">{{ log.student.student_id }} · {{ log.student.room_display }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td class="small">{{ log.reason }}</td>
+                <td><span class="badge bg-secondary-subtle text-dark">{{ log.get_source_module_display }}</span></td>
+                <td class="text-end fw-bold {% if log.points >= 0 %}text-success{% else %}text-danger{% endif %}">
+                  {% if log.points >= 0 %}+{% endif %}{{ log.points|floatformat:1 }}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-4">ยังไม่มีประวัติคะแนน</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-trophy-fill text-warning me-2"></i>นักเรียนคะแนนรวมสูงสุด 10 อันดับแรก</div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for st in top_students %}
+          <li class="list-group-item d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-warning text-dark">{{ forloop.counter }}</span>
+              {% if st.avatar_url %}
+                <img src="{{ st.avatar_url }}" class="avatar-circle" style="width:38px;height:38px;">
+              {% else %}
+                <span class="avatar-circle" style="width:38px;height:38px;">{{ st.avatar_initial }}</span>
+              {% endif %}
+              <div>
+                <div class="fw-bold small">{{ st.get_full_name }}</div>
+                <div class="text-muted" style="font-size:0.74rem;">รหัส {{ st.student_id }} · {{ st.room_display }} เลขที่ {{ st.class_number }}</div>
+              </div>
+            </div>
+            <span class="badge bg-success fs-6">{{ st.total_score|floatformat:1 }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
