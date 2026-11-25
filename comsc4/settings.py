@@ -32,7 +32,14 @@ SECRET_KEY = os.environ.get(
 )
 DEBUG = env_bool('DJANGO_DEBUG', True)
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',') if h.strip()]
-CSRF_TRUSTED_ORIGINS = [h.strip() for h in os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if h.strip()]
+CSRF_TRUSTED_ORIGINS = [
+    h.strip()
+    for h in os.environ.get(
+        'DJANGO_CSRF_TRUSTED_ORIGINS',
+        'https://*.app.github.dev,https://*.github.dev',
+    ).split(',')
+    if h.strip()
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
