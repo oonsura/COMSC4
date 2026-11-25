@@ -852,8 +852,10 @@
           <i class="bi bi-clock me-1"></i>เปิดเช็คชื่อ <span id="teacherSessionTimer">--:--</span>
         </span>
       {% else %}
-        <span class="badge bg-secondary" id="teacherSessionCountdownBadge">ปิดเช็คชื่อแล้ว</span>
+        <span class="badge bg-secondary" id="teacherSessionCountdownBadge">ปิดเช็คชื่อแล้ว (กำลังดู/แก้ไขประวัติ)</span>
       {% endif %}
+    {% else %}
+      <span class="badge bg-light text-secondary border" id="teacherNoSessionBadge">ยังไม่ได้เปิดรอบเช็คชื่อ</span>
     {% endif %}
 
     <span class="badge bg-success" id="sumOnline">Login {{ seating_snapshot.summary.online_count|default:0 }}/{{ seating_snapshot.summary.total_students|default:0 }}</span>
@@ -864,7 +866,7 @@
   <div class="d-flex flex-wrap align-items-center gap-1">
     <ul class="nav nav-pills seating-tabs-mini bg-light p-1 rounded border m-0" role="tablist">
       <li class="nav-item">
-        <button type="button" class="nav-link {% if active_tab != 'design' and active_tab != 'lab' and active_tab != 'online' %}active{% endif %}" id="tabBtnLive" onclick="switchSeatingTab('live')">
+        <button type="button" class="nav-link {% if active_tab != 'design' and active_tab != 'lab' and active_tab != 'online' and active_tab != 'absent' and active_tab != 'history' %}active{% endif %}" id="tabBtnLive" onclick="switchSeatingTab('live')">
           1. เช็คชื่อ / สมุด-หนังสือ
         </button>
       </li>
@@ -881,6 +883,16 @@
       <li class="nav-item">
         <button type="button" class="nav-link {% if active_tab == 'online' %}active{% endif %}" id="tabBtnOnline" onclick="switchSeatingTab('online')">
           คน Login <span class="badge bg-success ms-1" id="onlineListBadge">{{ seating_snapshot.online_students|length }}</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button type="button" class="nav-link {% if active_tab == 'absent' %}active{% endif %}" id="tabBtnAbsent" onclick="switchSeatingTab('absent')">
+          ขาดเรียน/ไม่ลงทะเบียน <span class="badge bg-danger ms-1" id="liveAbsentCountBadge">{{ seating_snapshot.absent_students|length }}</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button type="button" class="nav-link {% if active_tab == 'history' %}active{% endif %}" id="tabBtnHistory" onclick="switchSeatingTab('history')">
+          ประวัติการเช็คชื่อ <span class="badge bg-secondary ms-1" id="historyCountBadge">{{ history_rows|length }}</span>
         </button>
       </li>
     </ul>
@@ -913,7 +925,7 @@
   <!-- ======================================================================= -->
   <!-- แท็บ 1: เช็คชื่อ / สมุด-หนังสือ ในหน้าจอเดียว -->
   <!-- ======================================================================= -->
-  <div id="panelLiveMode" class="seating-panel {% if active_tab == 'design' or active_tab == 'lab' or active_tab == 'online' %}d-none{% endif %}">
+  <div id="panelLiveMode" class="seating-panel {% if active_tab == 'design' or active_tab == 'lab' or active_tab == 'online' or active_tab == 'absent' or active_tab == 'history' %}d-none{% endif %}">
     <div class="seating-panel-card">
       <div class="seating-subbar">
         <div class="d-flex flex-wrap align-items-center gap-3">
@@ -921,10 +933,6 @@
             {% if edit_classroom.lab_room %}<span class="badge bg-success-subtle text-success border border-success-subtle me-1">{{ edit_classroom.lab_room.name }}</span>{% endif %}
             กดปุ่ม <b>"ตรวจสอบ"</b> = เช็คหนังสือ+สมุด (+คะแนน) · กดชื่อ = ดูรายละเอียด/ให้คะแนนเพิ่ม
           </span>
-          <label class="form-check form-check-inline m-0 d-inline-flex align-items-center gap-1 small fw-bold text-primary" style="cursor:pointer;">
-            <input class="form-check-input m-0" type="checkbox" id="quickCheckBothToggle">
-            <span>กดการ์ด = ตรวจสอบทันที</span>
-          </label>
         </div>
 
         <div class="d-flex align-items-center gap-2">
@@ -1005,47 +1013,34 @@
         {% endif %}
       </div>
 
-      <!-- Right-Side Panel: ขาดเรียน / ไม่ลงทะเบียน + สรุป X คนสุดท้าย + บันทึก/ยกเลิกคะแนน -->
+      <!-- Right-Side Panel: จำนวน X คนสุดท้าย + ปุ่มสรุปการเช็คชื่อ -->
       <aside id="liveSidePanel">
-        <!-- 1. รายชื่อขาดเรียน / ไม่ลงทะเบียน -->
-        <div class="live-side-card" style="flex: 1 1 0; min-height: 90px;">
-          <div class="live-side-hdr">
-            <span>ขาดเรียน / ไม่ลงทะเบียน</span>
-            <span class="badge bg-danger" id="liveAbsentCountBadge">{{ seating_snapshot.absent_students|length }}</span>
-          </div>
-          <div class="live-side-scroll" id="liveAbsentList">
-            {% for ast in seating_snapshot.absent_students %}
-            <div class="live-side-row live-absent-row"
-                 onclick="{% if ast.seat_row and ast.seat_col %}openSeatModal('{{ ast.seat_row }}_{{ ast.seat_col }}', {{ ast.seat_row }}, {{ ast.seat_col }}){% else %}showSeatToast('{{ ast.name|escapejs }} ยังไม่ได้ระบุตำแหน่งที่นั่ง', true){% endif %}"
-                 title="{{ ast.student_id }} {{ ast.name }}">
-              <div class="text-truncate">
-                <span class="badge bg-secondary-subtle text-dark border me-1">{{ ast.class_number }}</span>
-                <span class="fw-semibold">{{ ast.name }}</span>
-              </div>
-              <span class="text-muted text-nowrap" style="font-size:0.65rem;">{{ ast.student_id }}</span>
-            </div>
-            {% empty %}
-            <div class="text-center text-success fw-semibold py-3 small">ลงทะเบียนครบทุกคนแล้ว ✓</div>
-            {% endfor %}
-          </div>
-        </div>
-
-        <!-- 2. สรุป X คนสุดท้ายที่ลงทะเบียน + บันทึกคะแนน -->
-        <div class="live-side-card" style="flex: 0 1 auto;">
+        <div class="live-side-card" style="flex: 1 1 auto;">
           <div class="live-side-hdr">
             <span>สรุป X คนสุดท้ายที่ลงทะเบียน</span>
             <span class="badge bg-secondary" id="liveRegCountBadge">ลงแล้ว {{ seating_snapshot.registered_students|length }}</span>
           </div>
-          <div class="p-2 border-bottom bg-light-subtle d-flex align-items-center gap-1">
-            <span class="small fw-semibold text-nowrap">จำนวน</span>
-            <input type="number" id="lastXCountInput" class="form-control form-control-sm text-center fw-bold" style="width:52px;" min="1" max="50" value="5">
-            <span class="small fw-semibold text-nowrap">คนสุดท้าย</span>
-            <button type="button" id="btnSummarizeLastX" class="btn btn-sm btn-warning fw-bold px-2 ms-auto" onclick="summarizeLastXStudents()">สรุป</button>
+          <div class="p-2 border-bottom bg-light-subtle">
+            <div class="d-flex align-items-center gap-1 mb-2">
+              <span class="small fw-semibold text-nowrap">จำนวน</span>
+              <input type="number" id="lastXCountInput" class="form-control form-control-sm text-center fw-bold" style="width:60px;" min="1" max="50" value="5" oninput="summarizeLastXStudents()" onchange="summarizeLastXStudents()">
+              <span class="small fw-semibold text-nowrap">คนสุดท้าย</span>
+            </div>
+            <form method="post" id="summarizeSessionForm" class="m-0" onsubmit="return confirm('ยืนยันสรุปการเช็คชื่อ? ระบบจะบันทึกประวัติ ปิดการเช็คชื่อ และรีเซ็ตหน้าจอกลับเป็นค่าเริ่มต้น');">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="summarize_session">
+              <input type="hidden" name="classroom_id" value="{{ edit_classroom.id }}">
+              <input type="hidden" name="session_id" id="summarizeFormSessionId" value="{{ current_session.id|default:'' }}">
+              <input type="hidden" name="check_date" value="{{ check_date_str }}">
+              <button type="submit" id="btnSummarizeSession" class="btn btn-sm btn-warning w-100 fw-bold">
+                <i class="bi bi-check2-circle me-1"></i>สรุปการเช็คชื่อ
+              </button>
+            </form>
           </div>
-          <div id="lastXResultBox" class="d-none">
+          <div id="lastXResultBox" class="d-flex flex-column flex-grow-1" style="min-height:0;">
             <div class="px-2 py-1 bg-warning-subtle border-bottom small fw-bold text-dark" id="lastXSummaryHeader"></div>
-            <div class="live-side-scroll border-bottom" id="lastXStudentList" style="max-height:135px;"></div>
-            <div class="p-2 bg-light">
+            <div class="live-side-scroll border-bottom" id="lastXStudentList"></div>
+            <div class="p-2 bg-light flex-shrink-0">
               <select id="lastXScoreRule" class="form-select form-select-sm mb-1" onchange="onLastXRuleChange()">
                 <option value="">-- กำหนดคะแนนเอง --</option>
                 {% for rule in score_rules %}
@@ -1071,34 +1066,8 @@
               {% endif %}
               <div class="d-flex gap-1">
                 <button type="button" id="btnSaveLastXScore" class="btn btn-sm btn-primary fw-bold flex-grow-1" onclick="saveLastXScore()">บันทึกคะแนน</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeLastXSummary()">ปิด</button>
               </div>
             </div>
-          </div>
-        </div>
-
-        <!-- 3. คะแนนที่บันทึกวันนี้ (ยกเลิกได้) -->
-        <div class="live-side-card" id="recentScoreBatchesCard" style="flex: 0 1 auto; max-height: 185px;">
-          <div class="live-side-hdr">
-            <span>คะแนนที่บันทึกวันนี้</span>
-            <span class="text-muted fw-normal" style="font-size:0.65rem;">กดยกเลิกเพื่อคืนคะแนน</span>
-          </div>
-          <div class="live-side-scroll" id="recentScoreBatchesList">
-            {% for b in seating_snapshot.recent_score_batches %}
-            <div class="live-side-row">
-              <div class="min-w-0 flex-grow-1" title="{% for st in b.students %}#{{ st.class_number }} {{ st.first_name }}{% if not forloop.last %}, {% endif %}{% endfor %}">
-                <div class="d-flex align-items-center gap-1">
-                  <span class="badge {% if b.points < 0 %}bg-danger{% else %}bg-success{% endif %}">{{ b.points|floatformat:"-1" }}</span>
-                  <span class="fw-semibold text-truncate">{{ b.label }}</span>
-                </div>
-                <div class="text-muted" style="font-size:0.64rem;">{{ b.student_count }} คน · {{ b.created_at }}</div>
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold text-nowrap" style="font-size:0.68rem;"
-                      onclick="cancelScoreBatch('{{ b.batch_id|escapejs }}')">ยกเลิก</button>
-            </div>
-            {% empty %}
-            <div class="text-center text-muted py-2 small">ยังไม่มีรายการคะแนนกลุ่มวันนี้</div>
-            {% endfor %}
           </div>
         </div>
       </aside>
@@ -1515,6 +1484,125 @@
       </div>
     </div>
   </div>
+
+  <!-- ======================================================================= -->
+  <!-- แท็บ 5: ขาดเรียน / ไม่ลงทะเบียน -->
+  <!-- ======================================================================= -->
+  <div id="panelAbsentMode" class="seating-panel {% if active_tab != 'absent' %}d-none{% endif %}">
+    <div class="seating-panel-card">
+      <div class="seating-subbar">
+        <span class="small fw-bold text-dark"><i class="bi bi-person-x-fill text-danger me-1"></i>รายชื่อนักเรียนห้อง {{ edit_classroom.name }} ที่ขาดเรียน / ไม่ลงทะเบียน</span>
+        <span class="small text-success fw-bold"><span class="online-dot me-1"></span>อัปเดตสด</span>
+      </div>
+      <div class="online-table-scroll">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th>เลขที่</th>
+              <th>รหัสนักเรียน - ชื่อ-นามสกุล</th>
+              <th>ตำแหน่งโต๊ะ</th>
+              <th class="text-end">คะแนนรวม</th>
+              <th class="text-end pe-3">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="liveAbsentList">
+            {% for ast in seating_snapshot.absent_students %}
+            <tr>
+              <td class="fw-bold">{{ ast.class_number }}</td>
+              <td><b class="small">{{ ast.student_id }} {{ ast.name }}</b></td>
+              <td class="small">{% if ast.seat_row and ast.seat_col %}แถว {{ ast.seat_row }}, C{{ ast.seat_col }}{% else %}<span class="text-muted">ยังไม่ได้ระบุ</span>{% endif %}</td>
+              <td class="text-end fw-bold text-secondary">{{ ast.total_score|floatformat:1 }}</td>
+              <td class="text-end pe-3">
+                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold"
+                        onclick="{% if ast.seat_row and ast.seat_col %}openSeatModal('{{ ast.seat_row }}_{{ ast.seat_col }}', {{ ast.seat_row }}, {{ ast.seat_col }}){% else %}showSeatToast('{{ ast.name|escapejs }} ยังไม่ได้ระบุตำแหน่งที่นั่ง', true){% endif %}">
+                  แก้ไข / ตรวจสอบ
+                </button>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-center text-success fw-semibold py-4 small">ลงทะเบียนครบทุกคนแล้ว ✓</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================= -->
+  <!-- แท็บ 6: ประวัติการเช็คชื่อ -->
+  <!-- ======================================================================= -->
+  <div id="panelHistoryMode" class="seating-panel {% if active_tab != 'history' %}d-none{% endif %}">
+    <div class="seating-panel-card">
+      <div class="seating-subbar">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="small fw-bold text-dark"><i class="bi bi-clock-history text-primary me-1"></i>ประวัติการเช็คชื่อ (คลิกเพื่อเปิดดู / แก้ไข / เปิดใหม่)</span>
+          <select id="historyRoomFilterSelect" class="form-select form-select-sm fw-semibold" style="width:auto;" onchange="filterAttendanceHistoryRows()">
+            <option value="all">ทุกห้องเรียน</option>
+            {% for c in classrooms %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <span class="small text-muted">เช็คห้องเดียวกันในวันเดียวกันหากห่างกันไม่เกิน 40 นาที ระบบจะเปิดประวัติเดิมขึ้นมาแก้ไข</span>
+      </div>
+      <div class="online-table-scroll">
+        <table class="table table-sm table-hover align-middle mb-0" id="attendanceHistoryTable">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th class="ps-3">วันที่</th>
+              <th>เวลา</th>
+              <th>ชั้น/ห้อง</th>
+              <th class="text-center">จำนวนคนลงทะเบียน</th>
+              <th class="text-center">จำนวนคนขาด</th>
+              <th class="text-center">จำนวนคนทั้งหมด</th>
+              <th>สถานะ</th>
+              <th class="text-end pe-3">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="attendanceHistoryTableBody">
+            {% for h in history_rows %}
+            <tr class="history-session-row {% if current_session and h.id == current_session.id %}table-primary{% endif %}" data-classroom-id="{{ h.classroom_id }}">
+              <td class="ps-3 fw-semibold">{{ h.date_be }}</td>
+              <td class="font-monospace small">{{ h.time_hms }}</td>
+              <td class="fw-bold">{{ h.classroom_name }}</td>
+              <td class="text-center fw-bold text-success">[{{ h.registered_count }}]</td>
+              <td class="text-center fw-bold text-danger">[{{ h.absent_count }}]</td>
+              <td class="text-center fw-bold text-dark">[{{ h.total_count }}]</td>
+              <td>
+                {% if h.is_open %}
+                  <span class="badge bg-success">เปิดเช็คชื่ออยู่</span>
+                {% elif h.is_summarized %}
+                  <span class="badge bg-primary-subtle text-primary border">สรุปแล้ว</span>
+                {% else %}
+                  <span class="badge bg-secondary">ปิดแล้ว</span>
+                {% endif %}
+              </td>
+              <td class="text-end pe-3 text-nowrap">
+                <a href="?session_id={{ h.id }}&check_date={{ h.check_date_iso }}" class="btn btn-sm btn-outline-primary fw-bold py-0 px-2">
+                  <i class="bi bi-pencil-square me-1"></i>เปิดแก้ไข
+                </a>
+                <form method="post" class="d-inline m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="toggle_session">
+                  <input type="hidden" name="session_id" value="{{ h.id }}">
+                  <input type="hidden" name="check_date" value="{{ h.check_date_iso }}">
+                  <input type="hidden" name="tab" value="live">
+                  <button type="submit" class="btn btn-sm {% if h.is_open %}btn-outline-danger{% else %}btn-success{% endif %} fw-bold py-0 px-2">
+                    {% if h.is_open %}ปิด{% else %}เปิดใหม่{% endif %}
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4 small">ยังไม่มีประวัติการเช็คชื่อ</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Standalone Hidden Forms (never nested inside #designBulkForm or #labDesignForm) -->
@@ -1697,28 +1785,30 @@
       </div>
     </div>
 
-    <!-- 2. รอบเช็คชื่อทั้งหมด -->
+    <!-- 2. ประวัติการเช็คชื่อ (เปิดใหม่ / แก้ไข) -->
     <div class="card">
-      <div class="card-header py-2 small fw-bold"><i class="bi bi-list-ul text-primary me-1"></i>รอบเช็คชื่อทั้งหมด</div>
+      <div class="card-header py-2 small fw-bold"><i class="bi bi-clock-history text-primary me-1"></i>ประวัติการเช็คชื่อ (เปิดใหม่ / แก้ไข)</div>
       <div class="card-body p-0" style="max-height:340px;overflow-y:auto;">
         <ul class="list-group list-group-flush">
-          {% for s in sessions %}
-          <li class="list-group-item d-flex justify-content-between align-items-center py-2 {% if current_session and s.id == current_session.id %}bg-primary-subtle{% endif %}">
-            <a href="?session_id={{ s.id }}&check_date={{ check_date_str }}" class="text-decoration-none text-dark flex-grow-1">
-              <div class="fw-bold small">{{ s.classroom.name }} - {{ s.title }}</div>
-              <div class="text-muted" style="font-size:0.72rem;">โค้ด: <b>{{ s.check_in_code }}</b> · {{ s.records.count }} คน</div>
+          {% for h in history_rows %}
+          <li class="list-group-item d-flex justify-content-between align-items-center py-2 {% if current_session and h.id == current_session.id %}bg-primary-subtle{% endif %}">
+            <a href="?session_id={{ h.id }}&check_date={{ h.check_date_iso }}" class="text-decoration-none text-dark flex-grow-1">
+              <div class="fw-bold small">{{ h.date_be }} {{ h.time_hms }} {{ h.classroom_name }}</div>
+              <div class="text-muted" style="font-size:0.72rem;">[{{ h.registered_count }}] [{{ h.absent_count }}] [{{ h.total_count }}] · โค้ด: <b>{{ h.check_in_code }}</b></div>
             </a>
             <form method="post" class="m-0">
               {% csrf_token %}
               <input type="hidden" name="action" value="toggle_session">
-              <input type="hidden" name="session_id" value="{{ s.id }}">
-              <input type="hidden" name="check_date" value="{{ check_date_str }}">
-              <input type="hidden" name="tab" class="sync-active-tab" value="{{ active_tab }}">
-              <button type="submit" class="btn btn-sm {% if s.is_open %}btn-success{% else %}btn-secondary{% endif %} py-0 px-2" style="font-size:0.72rem;">
-                {% if s.is_open %}เปิด{% else %}ปิด{% endif %}
+              <input type="hidden" name="session_id" value="{{ h.id }}">
+              <input type="hidden" name="check_date" value="{{ h.check_date_iso }}">
+              <input type="hidden" name="tab" value="live">
+              <button type="submit" class="btn btn-sm {% if h.is_open %}btn-success{% else %}btn-outline-secondary{% endif %} py-0 px-2" style="font-size:0.72rem;" title="{% if h.is_open %}คลิกเพื่อปิดรอบเช็คชื่อ{% else %}คลิกเพื่อเปิดรอบเช็คชื่อใหม่{% endif %}">
+                {% if h.is_open %}เปิดอยู่{% else %}เปิดใหม่{% endif %}
               </button>
             </form>
           </li>
+          {% empty %}
+          <li class="list-group-item text-center text-muted py-3 small">ยังไม่มีประวัติการเช็คชื่อ</li>
           {% endfor %}
         </ul>
       </div>
@@ -1893,7 +1983,7 @@
 {% if edit_classroom %}
 <script>
 const CLASSROOM_ID = {{ edit_classroom.id }};
-const SESSION_ID = '{{ current_session.id|default:"" }}';
+let SESSION_ID = '{{ current_session.id|default:"" }}';
 const CHECK_DATE = '{{ check_date_str|escapejs }}';
 const CSRF_TOKEN = '{{ csrf_token }}';
 const SEAT_ROWS = {{ edit_classroom.get_effective_rows }};
@@ -2015,20 +2105,24 @@ function toggleFullscreenSeating() {
 }
 
 function switchSeatingTab(tab) {
-  currentActiveTab = ['design', 'lab', 'online'].includes(tab) ? tab : 'live';
+  currentActiveTab = ['design', 'lab', 'online', 'absent', 'history'].includes(tab) ? tab : 'live';
   const panels = {
     live: document.getElementById('panelLiveMode'),
     design: document.getElementById('panelDesignMode'),
     lab: document.getElementById('panelLabMode'),
     online: document.getElementById('panelOnlineMode'),
+    absent: document.getElementById('panelAbsentMode'),
+    history: document.getElementById('panelHistoryMode'),
   };
   const btns = {
     live: document.getElementById('tabBtnLive'),
     design: document.getElementById('tabBtnDesign'),
     lab: document.getElementById('tabBtnLab'),
     online: document.getElementById('tabBtnOnline'),
+    absent: document.getElementById('tabBtnAbsent'),
+    history: document.getElementById('tabBtnHistory'),
   };
-  for (const key of ['live', 'design', 'lab', 'online']) {
+  for (const key of ['live', 'design', 'lab', 'online', 'absent', 'history']) {
     if (panels[key]) panels[key].classList.toggle('d-none', key !== currentActiveTab);
     if (btns[key]) btns[key].classList.toggle('active', key === currentActiveTab);
   }
@@ -2044,6 +2138,14 @@ function switchSeatingTab(tab) {
     fitViewportGrids();
     if (currentActiveTab === 'design') refreshDesignStatus();
     if (currentActiveTab === 'lab') refreshLabStatus();
+  });
+}
+
+function filterAttendanceHistoryRows() {
+  const val = document.getElementById('historyRoomFilterSelect')?.value || 'all';
+  document.querySelectorAll('.history-session-row').forEach(tr => {
+    const cid = tr.getAttribute('data-classroom-id') || '';
+    tr.classList.toggle('d-none', val !== 'all' && cid !== val);
   });
 }
 
@@ -2140,20 +2242,25 @@ function renderAbsentAndBatches(snap) {
     const listEl = document.getElementById('liveAbsentList');
     if (listEl) {
       if (absList.length === 0) {
-        listEl.innerHTML = '<div class="text-center text-success fw-semibold py-3 small">ลงทะเบียนครบทุกคนแล้ว ✓</div>';
+        listEl.innerHTML = '<tr><td colspan="5" class="text-center text-success fw-semibold py-4 small">ลงทะเบียนครบทุกคนแล้ว ✓</td></tr>';
       } else {
         listEl.innerHTML = absList.map(ast => {
           const clickAttr = (ast.seat_row && ast.seat_col)
             ? `openSeatModal('${ast.seat_row}_${ast.seat_col}', ${ast.seat_row}, ${ast.seat_col})`
             : `showSeatToast('${escapeHtml(ast.name).replace(/'/g, "\\'")} ยังไม่ได้ระบุตำแหน่งที่นั่ง', true)`;
+          const seatTxt = (ast.seat_row && ast.seat_col)
+            ? `แถว ${ast.seat_row}, C${ast.seat_col}`
+            : '<span class="text-muted">ยังไม่ได้ระบุ</span>';
           return `
-            <div class="live-side-row live-absent-row" onclick="${clickAttr}" title="${escapeHtml(ast.student_id)} ${escapeHtml(ast.name)}">
-              <div class="text-truncate">
-                <span class="badge bg-secondary-subtle text-dark border me-1">${escapeHtml(ast.class_number)}</span>
-                <span class="fw-semibold">${escapeHtml(ast.name)}</span>
-              </div>
-              <span class="text-muted text-nowrap" style="font-size:0.65rem;">${escapeHtml(ast.student_id)}</span>
-            </div>`;
+            <tr>
+              <td class="fw-bold">${escapeHtml(ast.class_number)}</td>
+              <td><b class="small">${escapeHtml(ast.student_id)} ${escapeHtml(ast.name)}</b></td>
+              <td class="small">${seatTxt}</td>
+              <td class="text-end fw-bold text-secondary">${Number(ast.total_score || 0).toFixed(1)}</td>
+              <td class="text-end pe-3">
+                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold" onclick="${clickAttr}">แก้ไข / ตรวจสอบ</button>
+              </td>
+            </tr>`;
         }).join('');
       }
     }
@@ -2162,35 +2269,7 @@ function renderAbsentAndBatches(snap) {
   if (Array.isArray(snap.registered_students)) {
     const regBadge = document.getElementById('liveRegCountBadge');
     if (regBadge) regBadge.innerText = `ลงแล้ว ${snap.registered_students.length}`;
-  }
-
-  if (Array.isArray(snap.recent_score_batches)) {
-    const batches = snap.recent_score_batches;
-    const batchEl = document.getElementById('recentScoreBatchesList');
-    if (batchEl) {
-      if (batches.length === 0) {
-        batchEl.innerHTML = '<div class="text-center text-muted py-2 small">ยังไม่มีรายการคะแนนกลุ่มวันนี้</div>';
-      } else {
-        batchEl.innerHTML = batches.map(b => {
-          const ptsNum = Number(b.points || 0);
-          const ptsBadgeCls = ptsNum < 0 ? 'bg-danger' : 'bg-success';
-          const ptsLabel = ptsNum > 0 ? `+${ptsNum}` : String(ptsNum);
-          const namesTitle = (b.students || []).map(s => `#${s.class_number} ${s.first_name}`).join(', ');
-          return `
-            <div class="live-side-row">
-              <div class="min-w-0 flex-grow-1" title="${escapeHtml(namesTitle)}">
-                <div class="d-flex align-items-center gap-1">
-                  <span class="badge ${ptsBadgeCls}">${escapeHtml(ptsLabel)}</span>
-                  <span class="fw-semibold text-truncate">${escapeHtml(b.label)}</span>
-                </div>
-                <div class="text-muted" style="font-size:0.64rem;">${b.student_count} คน · ${escapeHtml(b.created_at)}</div>
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold text-nowrap" style="font-size:0.68rem;"
-                      data-batch-id="${escapeHtml(b.batch_id)}" onclick="cancelScoreBatch(this.dataset.batchId)">ยกเลิก</button>
-            </div>`;
-        }).join('');
-      }
-    }
+    summarizeLastXStudents(true);
   }
 }
 
@@ -2253,7 +2332,7 @@ function applySnapshot(snap) {
   renderAbsentAndBatches(snap);
 }
 
-function summarizeLastXStudents() {
+function summarizeLastXStudents(preserveUnchecked = false) {
   const regList = Array.isArray(latestSnapshot?.registered_students) ? latestSnapshot.registered_students : [];
   const rawX = parseInt(document.getElementById('lastXCountInput')?.value || '5', 10);
   const x = Math.max(1, Math.min(50, isNaN(rawX) ? 5 : rawX));
@@ -2263,30 +2342,33 @@ function summarizeLastXStudents() {
   const listEl = document.getElementById('lastXStudentList');
   if (!box || !listEl) return;
 
+  const uncheckedSet = new Set();
+  if (preserveUnchecked) {
+    document.querySelectorAll('.last-x-st-chk:not(:checked)').forEach(el => uncheckedSet.add(String(el.value)));
+  }
+
   if (hdr) {
     hdr.innerText = picked.length > 0
       ? `${picked.length} คนสุดท้ายที่ลงทะเบียน (ล่าสุดอยู่บนสุด)`
-      : 'ยังไม่มีนักเรียนที่ลงทะเบียนหรือ Login ในขณะนี้';
+      : 'ยังไม่มีนักเรียนที่ลงทะเบียนในรอบนี้';
   }
   if (picked.length === 0) {
-    listEl.innerHTML = '<div class="text-center text-muted py-2 small">ไม่มีรายชื่อ</div>';
+    listEl.innerHTML = '<div class="text-center text-muted py-3 small">ไม่มีรายชื่อ</div>';
   } else {
-    listEl.innerHTML = picked.map((st, idx) => `
+    listEl.innerHTML = picked.map((st, idx) => {
+      const chkAttr = uncheckedSet.has(String(st.id)) ? '' : 'checked';
+      return `
       <label class="live-side-row" style="cursor:pointer;">
         <div class="d-flex align-items-center gap-1 min-w-0">
-          <input type="checkbox" class="form-check-input m-0 last-x-st-chk flex-shrink-0" value="${st.id}" checked>
+          <input type="checkbox" class="form-check-input m-0 last-x-st-chk flex-shrink-0" value="${st.id}" ${chkAttr}>
           <span class="badge bg-warning-subtle text-dark border">${idx + 1}</span>
           <span class="fw-bold">#${escapeHtml(st.class_number)}</span>
           <span class="text-truncate">${escapeHtml(st.name)}</span>
         </div>
         <span class="text-muted text-nowrap" style="font-size:0.65rem;">${escapeHtml(st.registered_at)}</span>
-      </label>`).join('');
+      </label>`;
+    }).join('');
   }
-  box.classList.remove('d-none');
-}
-
-function closeLastXSummary() {
-  document.getElementById('lastXResultBox')?.classList.add('d-none');
 }
 
 function onLastXRuleChange() {
@@ -2334,30 +2416,6 @@ function saveLastXScore() {
       }
       applySnapshot(data);
       showSeatToast(data.message, false);
-      closeLastXSummary();
-    })
-    .catch(() => showSeatToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', true));
-}
-
-function cancelScoreBatch(batchId) {
-  if (!batchId) return;
-  if (!confirm('ยืนยันยกเลิกการบันทึกคะแนนชุดนี้?')) return;
-  const fd = new FormData();
-  fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
-  fd.append('action', 'cancel');
-  fd.append('batch_id', batchId);
-  fd.append('check_date', CHECK_DATE);
-  if (SESSION_ID) fd.append('session_id', SESSION_ID);
-
-  fetch(`/api/classroom/${CLASSROOM_ID}/attendance-batch-score/`, { method: 'POST', body: fd })
-    .then(r => r.json())
-    .then(data => {
-      if (!data.ok) {
-        showSeatToast(data.error || 'ไม่สามารถยกเลิกรายการคะแนนนี้ได้', true);
-        return;
-      }
-      applySnapshot(data);
-      showSeatToast(data.message, false);
     })
     .catch(() => showSeatToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', true));
 }
@@ -2392,6 +2450,21 @@ function quickSeatCheck(r, c, studentId, checkType, extraRuleId = '', note = nul
         showSeatToast(data.error || 'เกิดข้อผิดพลาด', true);
         return null;
       }
+      if (data.active_session_id && !SESSION_ID) {
+        SESSION_ID = String(data.active_session_id);
+        const sumSessInp = document.getElementById('summarizeFormSessionId');
+        if (sumSessInp) sumSessInp.value = SESSION_ID;
+        const noSessBadge = document.getElementById('teacherNoSessionBadge');
+        if (noSessBadge) {
+          noSessBadge.className = 'badge bg-secondary';
+          noSessBadge.innerText = 'กำลังแก้ไขประวัติเดิม';
+        }
+        try {
+          const u = new URL(window.location.href);
+          u.searchParams.set('session_id', SESSION_ID);
+          history.replaceState(null, '', u.toString());
+        } catch (e) {}
+      }
       showSeatToast(data.message, false);
       if (data.seats) {
         applySnapshot(data);
@@ -2403,13 +2476,6 @@ function quickSeatCheck(r, c, studentId, checkType, extraRuleId = '', note = nul
 }
 
 function onSeatCardClick(key, r, c) {
-  const seat = (latestSnapshot.seats || {})[key];
-  const quickBoth = document.getElementById('quickCheckBothToggle')?.checked;
-  if (quickBoth) {
-    const stId = seat && seat.student ? seat.student.id : '';
-    quickSeatCheck(r, c, stId, 'toggle_both');
-    return;
-  }
   openSeatModal(key, r, c);
 }
 
@@ -2423,13 +2489,25 @@ function openSeatModal(key, r, c) {
   } else {
     const st = seat.student;
     const bothOn = Boolean(st.has_book && st.has_notebook);
+    const isReg = Array.isArray(latestSnapshot.registered_students)
+      && latestSnapshot.registered_students.some(rs => rs.id === st.id);
     body.innerHTML = `
       <div class="d-flex align-items-center gap-3 mb-3 p-2 bg-light rounded border">
         ${st.avatar ? `<img src="${escapeHtml(st.avatar)}" class="avatar-circle">` : `<span class="avatar-circle">${escapeHtml(st.initial)}</span>`}
         <div class="flex-grow-1">
           <div class="fw-bold">${escapeHtml(st.name)} (เลขที่ ${st.class_number})</div>
           <div class="small text-muted">รหัส ${escapeHtml(st.student_id)} · คะแนนรวม <b class="text-success" id="modalTotalScore">${Number(st.total_score).toFixed(1)}</b></div>
-          <div class="small">${st.is_online ? `<span class="text-success fw-bold">● Login อยู่ (${escapeHtml(st.online_info.ip)} · ${escapeHtml(st.online_info.login_at)})</span>` : '<span class="text-muted">ยังไม่ได้ Login</span>'}</div>
+          <div class="small" id="modalRegStatusLine">${isReg ? '<span class="text-success fw-bold">● ลงทะเบียน/มาเรียนแล้ว</span>' : '<span class="text-danger fw-bold">● ขาดเรียน / ยังไม่ลงทะเบียน</span>'}</div>
+        </div>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-6">
+          <button type="button" class="btn btn-sm w-100 fw-bold ${isReg ? 'btn-success' : 'btn-outline-success'}"
+                  onclick="modalToggleAttendance(${r}, ${c}, ${st.id}, 'mark_present')">✓ ตั้งเป็นมาเรียน</button>
+        </div>
+        <div class="col-6">
+          <button type="button" class="btn btn-sm w-100 fw-bold ${!isReg ? 'btn-danger' : 'btn-outline-danger'}"
+                  onclick="modalToggleAttendance(${r}, ${c}, ${st.id}, 'mark_absent')">✕ ตั้งเป็นขาดเรียน</button>
         </div>
       </div>
       <div class="row g-2 mb-3">
@@ -2452,7 +2530,7 @@ function openSeatModal(key, r, c) {
           </button>
         </div>
         <div class="col-12">
-          <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="modalToggleCheck(${r}, ${c}, ${st.id}, 'both_off')">✕ ล้างการเช็ควันนี้</button>
+          <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="modalToggleCheck(${r}, ${c}, ${st.id}, 'both_off')">✕ ล้างการเช็คหนังสือ/สมุด</button>
         </div>
       </div>
       <div class="border-top pt-2">
@@ -2474,6 +2552,13 @@ function openSeatModal(key, r, c) {
     seatModalInstance = new bootstrap.Modal(document.getElementById('seatCheckModal'));
   }
   seatModalInstance.show();
+}
+
+function modalToggleAttendance(r, c, stId, type) {
+  quickSeatCheck(r, c, stId, type).then(data => {
+    if (!data) return;
+    openSeatModal(`${r}_${c}`, r, c);
+  });
 }
 
 function modalToggleCheck(r, c, stId, type) {

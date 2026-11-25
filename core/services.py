@@ -168,18 +168,48 @@ def toggle_student_material_check(
 ):
     """เช็คหรือยกเลิกการนำหนังสือ/สมุดของนักเรียนในแผนผัง พร้อมเพิ่ม/ลบคะแนนจากกฎคะแนนอัตโนมัติ"""
     cdate = check_date or timezone.localdate()
-    chk, _ = StudentMaterialCheck.objects.get_or_create(
-        classroom=classroom,
-        student=student,
-        check_date=cdate,
-        defaults={
-            'session': session,
-            'academic_year': getattr(session, 'academic_year', '') or get_current_academic_year(),
-            'seat_row': seat_row or 0,
-            'seat_col': seat_col or 0,
-            'checked_by': teacher_user,
-        },
-    )
+    cur_yr = getattr(session, 'academic_year', '') or get_current_academic_year()
+    chk = None
+    if session is not None:
+        chk = StudentMaterialCheck.objects.filter(
+            classroom=classroom, student=student, session=session
+        ).order_by('-id').first()
+        if chk is None and not session.is_summarized:
+            chk = StudentMaterialCheck.objects.filter(
+                classroom=classroom, student=student, check_date=cdate,
+                session__isnull=True, is_summarized=False,
+            ).order_by('-id').first()
+            if chk is not None:
+                chk.session = session
+        if chk is None:
+            chk = StudentMaterialCheck.objects.create(
+                classroom=classroom,
+                student=student,
+                check_date=cdate,
+                session=session,
+                is_summarized=bool(session.is_summarized),
+                academic_year=cur_yr,
+                seat_row=seat_row or 0,
+                seat_col=seat_col or 0,
+                checked_by=teacher_user,
+            )
+    else:
+        chk = StudentMaterialCheck.objects.filter(
+            classroom=classroom, student=student, check_date=cdate,
+            session__isnull=True, is_summarized=False,
+        ).order_by('-id').first()
+        if chk is None:
+            chk = StudentMaterialCheck.objects.create(
+                classroom=classroom,
+                student=student,
+                check_date=cdate,
+                session=None,
+                is_summarized=False,
+                academic_year=cur_yr,
+                seat_row=seat_row or 0,
+                seat_col=seat_col or 0,
+                checked_by=teacher_user,
+            )
 
     if check_type == 'toggle_book':
         new_book, new_notebook = (not chk.has_book), chk.has_notebook

@@ -1245,12 +1245,15 @@ class Comsc4FullSystemTests(TestCase):
         for marker in (
             'id="liveSidePanel"',
             'id="liveAbsentList"',
+            'id="panelAbsentMode"',
+            'id="panelHistoryMode"',
             'id="lastXCountInput"',
-            'id="btnSummarizeLastX"',
+            'id="btnSummarizeSession"',
             'id="btnSaveLastXScore"',
-            'id="recentScoreBatchesList"',
         ):
             self.assertContains(live_page, marker)
+        self.assertNotContains(live_page, 'id="quickCheckBothToggle"')
+        self.assertNotContains(live_page, 'id="recentScoreBatchesCard"')
 
         live_snap = ct.get(reverse('core:api_classroom_seating_live', args=[room01.id]) + f'?session_id={sess.id}').json()
         self.assertTrue(live_snap['ok'])
@@ -3979,11 +3982,126 @@ class Comsc4FullSystemTests(TestCase):
         delete_activity_files_for_year('2569')
         delete_activity_files_for_year('2570')
 
+    def test_summarize_attendance_closes_and_clears_screen_and_history_reopen(self):
+        """กดสรุปการเช็คชื่อ -> รีเซ็ตทั้งหมดเป็นเริ่มต้น, แท็บประวัติ [ลงทะเบียน][ขาด][ทั้งหมด] และกฎ 40 นาที"""
+        admin = User.objects.filter(role=User.ROLE_ADMIN).first() or User.objects.filter(role=User.ROLE_TEACHER).first()
+        room01 = Classroom.objects.get(code='01')
+        st = User.objects.get(student_id='99999')
+        total_room01 = User.objects.filter(role=User.ROLE_STUDENT, academic_year='2569', room_code='01', is_active=True).count()
+        score_before = float(st.total_score or 0.0)
 
+        ct = Client()
+        ct.force_login(admin)
 
+        # 1. เปิดรอบเช็คชื่อใหม่
+        ct.post(reverse('core:teacher_attendance'), {
+            'action': 'create_session',
+            'classroom_id': room01.id,
+            'title': 'คาบทดสอบสรุปเช็คชื่อ',
+            'check_in_code': 'SUM001',
+            'attendance_points': '1.0',
+        })
+        sess = AttendanceSession.objects.get(classroom=room01, check_in_code='SUM001')
+        self.assertTrue(sess.is_open)
 
+        # นักเรียนล็อกอิน + เช็คชื่อ + ครูเช็คหนังสือ/สมุด
+        cs = Client()
+        cs.post(reverse('core:login'), {'login_mode': 'staff', 'username': '99999', 'password': '1234'})
+        cs.post(reverse('core:student_attendance'), {'seat_row': 1, 'seat_col': 1})
+        self.assertEqual(AttendanceRecord.objects.filter(session=sess, student=st).count(), 1)
 
+        ct.post(reverse('core:api_classroom_seat_check', args=[room01.id]), {
+            'session_id': sess.id,
+            'student_id': st.id,
+            'seat_row': 1,
+            'seat_col': 1,
+            'check_type': 'toggle_both',
+        })
+        st.refresh_from_db()
+        score_after_checks = float(st.total_score or 0.0)
+        self.assertGreater(score_after_checks, score_before)
 
+        r_open = ct.get(reverse('core:teacher_attendance') + f'?classroom_id={room01.id}')
+        html_open = r_open.content.decode('utf-8')
+        self.assertIn('SUM001', html_open)
+        self.assertIn('id="btnSummarizeSession"', html_open)
+        self.assertNotIn('กดการ์ด = ตรวจสอบทันที', html_open)
+        self.assertNotIn('คะแนนที่บันทึกวันนี้', html_open)
+        self.assertIn('ขาดเรียน/ไม่ลงทะเบียน', html_open)
+        self.assertIn('ประวัติการเช็คชื่อ', html_open)
 
+        # 2. กดสรุปการเช็คชื่อ -> ต้องปิดรอบ บันทึกประวัติ และรีเซ็ตการเช็คทั้งหมดบนหน้าจอเป็นเริ่มต้น (คะแนนนักเรียนไม่หาย)
+        r_sum = ct.post(reverse('core:teacher_attendance'), {
+            'action': 'summarize_session',
+            'classroom_id': room01.id,
+            'session_id': sess.id,
+        }, follow=False)
+        self.assertEqual(r_sum.status_code, 302)
+        self.assertNotIn('session_id=', r_sum['Location'])
 
+        sess.refresh_from_db()
+        self.assertFalse(sess.is_open)
+        self.assertTrue(sess.is_summarized)
+        self.assertEqual(sess.registered_count_snapshot, 1)
+        self.assertEqual(sess.absent_count_snapshot, total_room01 - 1)
+        self.assertEqual(sess.total_students_snapshot, total_room01)
+
+        st.refresh_from_db()
+        self.assertAlmostEqual(float(st.total_score or 0.0), score_after_checks, places=2)
+
+        r_cleared = ct.get(reverse('core:teacher_attendance') + f'?classroom_id={room01.id}')
+        snap_cleared = r_cleared.context['seating_snapshot']['summary']
+        self.assertEqual(snap_cleared['checked_in_count'], 0)
+        self.assertEqual(snap_cleared['online_count'], 0)
+        self.assertEqual(snap_cleared['registered_count'], 0)
+        self.assertEqual(snap_cleared['book_count'], 0)
+        self.assertEqual(snap_cleared['notebook_count'], 0)
+
+        html_cleared = r_cleared.content.decode('utf-8')
+        self.assertIn('ยังไม่ได้เปิดรอบเช็คชื่อ', html_cleared)
+        self.assertIn('id="btnSummarizeSession"', html_cleared)
+        self.assertIn('[1]', html_cleared)
+        self.assertIn(f'[{total_room01 - 1}]', html_cleared)
+        self.assertIn(f'[{total_room01}]', html_cleared)
+        local_sum_dt = timezone.localtime(sess.summarized_at)
+        expected_be_date = f'{local_sum_dt.day:02d}/{local_sum_dt.month:02d}/{local_sum_dt.year + 543}'
+        self.assertIn(expected_be_date, html_cleared)
+
+        # 3. เช็คซ้ำห้องเดียวกันในวันเดียวกันโดยเวลาห่างกันไม่เกิน 40 นาที -> ต้องเปิดประวัติเดิมขึ้นมาแก้ไข ไม่สร้างข้อมูลใหม่
+        count_before_reopen = AttendanceSession.objects.filter(classroom=room01).count()
+        r_reopen_within_40 = ct.post(reverse('core:teacher_attendance'), {
+            'action': 'create_session',
+            'classroom_id': room01.id,
+            'title': 'พยายามเปิดใหม่ใน 10 นาที',
+            'check_in_code': 'DUP40M',
+        }, follow=False)
+        self.assertEqual(r_reopen_within_40.status_code, 302)
+        self.assertIn(f'session_id={sess.id}', r_reopen_within_40['Location'])
+        self.assertEqual(AttendanceSession.objects.filter(classroom=room01).count(), count_before_reopen)
+
+        # ปิดสรุปอีกครั้งหลังแก้ไข
+        ct.post(reverse('core:teacher_attendance'), {
+            'action': 'summarize_session',
+            'classroom_id': room01.id,
+            'session_id': sess.id,
+        })
+
+        # 4. เมื่อเวลาห่างกันเกิน 40 นาที (เช่น 45 นาทีก่อนหน้า) -> จึงบันทึก/สร้างเป็นข้อมูลรอบใหม่ได้
+        past_45m = timezone.now() - timedelta(minutes=45)
+        AttendanceSession.objects.filter(pk=sess.pk).update(
+            summarized_at=past_45m,
+            opened_at=past_45m,
+            created_at=past_45m,
+        )
+        r_new_after_40 = ct.post(reverse('core:teacher_attendance'), {
+            'action': 'create_session',
+            'classroom_id': room01.id,
+            'title': 'คาบใหม่หลังเกิน 40 นาที',
+            'check_in_code': 'NEW45M',
+        }, follow=False)
+        self.assertEqual(r_new_after_40.status_code, 302)
+        sess2 = AttendanceSession.objects.filter(classroom=room01, check_in_code='NEW45M').first()
+        self.assertIsNotNone(sess2)
+        self.assertNotEqual(sess2.id, sess.id)
+        self.assertEqual(AttendanceSession.objects.filter(classroom=room01).count(), count_before_reopen + 1)
 

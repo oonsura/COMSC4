@@ -3763,10 +3763,133 @@ def _serialize_student_seat_card(st, online_map, material_map, att_rec=None):
     }
 
 
+ATTENDANCE_REOPEN_WINDOW_MINUTES = 40
+
+
 def _fmt_local_time(dt):
     if not dt:
         return '-'
     return (timezone.localtime(dt) if timezone.is_aware(dt) else dt).strftime('%H:%M:%S')
+
+
+def _fmt_thai_be_date_time(dt):
+    if not dt:
+        return '-', '-'
+    local_dt = timezone.localtime(dt) if timezone.is_aware(dt) else dt
+    be_year = local_dt.year + 543 if local_dt.year < 2400 else local_dt.year
+    return f'{local_dt.day:02d}/{local_dt.month:02d}/{be_year}', local_dt.strftime('%H:%M:%S')
+
+
+def _get_classroom_day_sessions_qs(classroom, check_date=None, cur_yr=None):
+    yr = cur_yr or get_current_academic_year()
+    cdate = check_date or timezone.localdate()
+    tz = timezone.get_current_timezone()
+    day_start = timezone.make_aware(datetime.combine(cdate, datetime.min.time()), tz)
+    day_end = day_start + timedelta(days=1)
+    return (
+        AttendanceSession.objects.filter(academic_year=yr, classroom=classroom)
+        .filter(
+            Q(summarized_at__gte=day_start, summarized_at__lt=day_end)
+            | Q(opened_at__gte=day_start, opened_at__lt=day_end)
+            | Q(created_at__gte=day_start, created_at__lt=day_end)
+        )
+        .order_by('-summarized_at', '-opened_at', '-created_at', '-id')
+    )
+
+
+def _find_recent_reopenable_session(classroom, check_date=None, now=None, cur_yr=None):
+    """
+    ตรวจว่าห้องเรียนนี้มีการสรุปเช็คชื่อในวันเดียวกันไปเมื่อไม่เกิน 40 นาทีหรือไม่
+    หากไม่เกิน 40 นาที ให้คืนรอบประวัติเดิมเพื่อเปิดแก้ไข/ปรับปรุงแทนการบันทึกข้อมูลใหม่
+    """
+    cdate = check_date or timezone.localdate()
+    now_dt = now or timezone.now()
+    latest = (
+        _get_classroom_day_sessions_qs(classroom, check_date=cdate, cur_yr=cur_yr)
+        .filter(is_summarized=True)
+        .first()
+    )
+    if not latest:
+        return None
+    ref_dt = latest.summarized_at or latest.opened_at or latest.created_at
+    if not ref_dt:
+        return None
+    diff_sec = (now_dt - ref_dt).total_seconds()
+    if diff_sec <= ATTENDANCE_REOPEN_WINDOW_MINUTES * 60:
+        return latest
+    return None
+
+
+def _sync_and_summarize_attendance_session(classroom, sess, check_date=None, user=None, finalize=True):
+    """บันทึกสถานะลงทะเบียน/สมุด-หนังสือลงในรอบเช็คชื่อ พร้อมอัปเดตตัวเลขสรุป [ลงทะเบียน] [ขาด] [ทั้งหมด]"""
+    cur_yr = sess.academic_year or get_current_academic_year()
+    cdate = check_date or timezone.localdate()
+    students = list(
+        get_active_students_qs(cur_yr, room_code=classroom.code).order_by('class_number', 'student_id')
+    )
+
+    # ผูกรายการเช็คหนังสือ/สมุดที่ยังไม่ได้สรุปเข้ากับรอบเช็คชื่อนี้
+    StudentMaterialCheck.objects.filter(
+        academic_year=cur_yr,
+        classroom=classroom,
+        check_date=cdate,
+        session__isnull=True,
+        is_summarized=False,
+    ).update(session=sess)
+
+    if finalize:
+        StudentMaterialCheck.objects.filter(session=sess).update(is_summarized=True)
+
+    existing_records = {r.student_id: r for r in sess.records.all()}
+    explicit_absent_ids = {
+        sid for sid, rec in existing_records.items() if rec.status == AttendanceRecord.STATUS_ABSENT
+    }
+
+    if finalize and (not sess.is_summarized or sess.is_open):
+        online_ids = set(
+            UserSession.objects.filter(
+                user__role=User.ROLE_STUDENT,
+                user__academic_year=cur_yr,
+                user__is_active=True,
+                user__room_code=classroom.code,
+                is_active=True,
+            ).values_list('user_id', flat=True)
+        )
+        mat_map = {
+            m.student_id: m
+            for m in StudentMaterialCheck.objects.filter(session=sess)
+            if (m.has_book or m.has_notebook)
+        }
+        for st in students:
+            if st.id in existing_records or st.id in explicit_absent_ids:
+                continue
+            if st.id in online_ids or st.id in mat_map:
+                assigned_rc = classroom.get_seat_for_class_number(st.class_number)
+                mat_item = mat_map.get(st.id)
+                sr = (mat_item.seat_row if mat_item and mat_item.seat_row else 0) or (assigned_rc[0] if assigned_rc else 1)
+                sc = (mat_item.seat_col if mat_item and mat_item.seat_col else 0) or (assigned_rc[1] if assigned_rc else 1)
+                AttendanceRecord.objects.create(
+                    session=sess,
+                    student=st,
+                    seat_row=sr,
+                    seat_col=sc,
+                    status=AttendanceRecord.STATUS_PRESENT,
+                )
+
+    reg_cnt = sess.records.exclude(status=AttendanceRecord.STATUS_ABSENT).count()
+    total_cnt = len(students)
+    abs_cnt = max(0, total_cnt - reg_cnt)
+
+    sess.registered_count_snapshot = reg_cnt
+    sess.absent_count_snapshot = abs_cnt
+    sess.total_students_snapshot = total_cnt
+    if finalize:
+        sess.is_open = False
+        sess.is_summarized = True
+        if not sess.summarized_at:
+            sess.summarized_at = timezone.now()
+    sess.save()
+    return sess
 
 
 def _build_classroom_seating_snapshot(classroom, current_session=None, check_date=None):
@@ -3778,28 +3901,55 @@ def _build_classroom_seating_snapshot(classroom, current_session=None, check_dat
     )
     students_by_no = {int(st.class_number): st for st in students if st.class_number}
 
+    active_sess = current_session if (current_session and current_session.classroom_id == classroom.id) else None
+    unsummarized_checks_qs = StudentMaterialCheck.objects.filter(
+        academic_year=cur_yr, classroom=classroom, check_date=cdate,
+        session__isnull=True, is_summarized=False,
+    )
+    has_summarized_today = (
+        _get_classroom_day_sessions_qs(classroom, check_date=cdate, cur_yr=cur_yr)
+        .filter(is_summarized=True)
+        .exists()
+    )
+    is_reset_screen = bool(active_sess is None and has_summarized_today and not unsummarized_checks_qs.exists())
+
     online_map = {}
-    for sess_obj in (
-        UserSession.objects.filter(
-            user__role=User.ROLE_STUDENT, user__academic_year=cur_yr, user__is_active=True,
-            user__room_code=classroom.code, is_active=True
-        )
-        .select_related('user')
-        .order_by('-last_active')
-    ):
-        online_map.setdefault(sess_obj.user_id, sess_obj)
-
-    material_map = {
-        m.student_id: m
-        for m in StudentMaterialCheck.objects.filter(academic_year=cur_yr, classroom=classroom, check_date=cdate)
-    }
-
+    material_map = {}
     att_by_seat = {}
     att_by_student = {}
-    if current_session and current_session.classroom_id == classroom.id:
-        for r in current_session.records.select_related('student'):
-            att_by_seat[f'{r.seat_row}_{r.seat_col}'] = r
-            att_by_student[r.student_id] = r
+    explicit_absent_ids = set()
+
+    if not is_reset_screen:
+        show_live_online = True
+        if active_sess is not None and active_sess.is_summarized and not active_sess.is_open:
+            show_live_online = False
+
+        if show_live_online:
+            for sess_obj in (
+                UserSession.objects.filter(
+                    user__role=User.ROLE_STUDENT, user__academic_year=cur_yr, user__is_active=True,
+                    user__room_code=classroom.code, is_active=True
+                )
+                .select_related('user')
+                .order_by('-last_active')
+            ):
+                online_map.setdefault(sess_obj.user_id, sess_obj)
+
+        if active_sess is not None:
+            if not active_sess.is_summarized:
+                for m in unsummarized_checks_qs:
+                    material_map[m.student_id] = m
+            for m in StudentMaterialCheck.objects.filter(classroom=classroom, session=active_sess):
+                material_map[m.student_id] = m
+            for r in active_sess.records.select_related('student'):
+                if r.status == AttendanceRecord.STATUS_ABSENT:
+                    explicit_absent_ids.add(r.student_id)
+                else:
+                    att_by_seat[f'{r.seat_row}_{r.seat_col}'] = r
+                    att_by_student[r.student_id] = r
+        else:
+            for m in unsummarized_checks_qs:
+                material_map[m.student_id] = m
 
     valid_class_nos = {int(st.class_number) for st in students if st.class_number}
     disabled_seats = classroom.get_disabled_seats_set()
@@ -3833,6 +3983,8 @@ def _build_classroom_seating_snapshot(classroom, current_session=None, check_dat
     for st in students:
         att_r = att_by_student.get(st.id)
         sess_obj = online_map.get(st.id)
+        mat_obj = material_map.get(st.id)
+        has_mat = bool(mat_obj and (mat_obj.has_book or mat_obj.has_notebook))
         assigned_rc = classroom.get_seat_for_class_number(st.class_number)
         sr = att_r.seat_row if att_r else (assigned_rc[0] if assigned_rc else 0)
         sc = att_r.seat_col if att_r else (assigned_rc[1] if assigned_rc else 0)
@@ -3841,9 +3993,9 @@ def _build_classroom_seating_snapshot(classroom, current_session=None, check_dat
             item['seat_row'] = sr
             item['seat_col'] = sc
             online_students.append(item)
-        if att_r or sess_obj:
-            reg_dt = att_r.checked_at if att_r else sess_obj.created_at
-            reg_source = 'checkin' if att_r else 'login'
+        if st.id not in explicit_absent_ids and (att_r or sess_obj or has_mat):
+            reg_dt = att_r.checked_at if att_r else (sess_obj.created_at if sess_obj else mat_obj.updated_at)
+            reg_source = 'checkin' if att_r else ('login' if sess_obj else 'material')
             registered_students.append({
                 'id': st.id,
                 'class_number': st.class_number,
@@ -3978,12 +4130,30 @@ def teacher_attendance_view(request):
 
         if action == 'create_session':
             room = get_object_or_404(Classroom, pk=request.POST.get('classroom_id'))
+            cur_yr_post = get_current_academic_year()
+            recent_sess = _find_recent_reopenable_session(room, check_date=check_date, cur_yr=cur_yr_post)
+            if recent_sess is not None:
+                AttendanceSession.objects.filter(classroom=room, is_open=True).exclude(pk=recent_sess.pk).update(is_open=False)
+                recent_sess.is_open = True
+                recent_sess.opened_at = timezone.now()
+                recent_sess.auto_close_minutes = int(recent_sess.auto_close_minutes or 25)
+                recent_sess.save(update_fields=['is_open', 'opened_at', 'auto_close_minutes'])
+                d_str, t_str = _fmt_thai_be_date_time(
+                    recent_sess.summarized_at or recent_sess.opened_at or recent_sess.created_at
+                )
+                messages.info(
+                    request,
+                    f'ห้อง {room.name} มีประวัติการเช็คชื่อเมื่อ {d_str} {t_str} (ห่างกันไม่เกิน 40 นาที) '
+                    f'ระบบจึงเปิดประวัติเดิมขึ้นมาแก้ไข/ปรับปรุง'
+                )
+                return redirect(f'/teacher/attendance/?session_id={recent_sess.id}&check_date={check_date_str}')
+
             code = (request.POST.get('check_in_code') or f'DS{random.randint(1000, 9999)}').strip().upper()
             AttendanceSession.objects.filter(classroom=room, is_open=True).update(is_open=False)
             sess = AttendanceSession.objects.create(
                 classroom=room,
                 title=(request.POST.get('title') or f'คาบเรียน {room.name}').strip(),
-                academic_year=get_current_academic_year(),
+                academic_year=cur_yr_post,
                 check_in_code=code,
                 allowed_ip_prefix=(request.POST.get('allowed_ip_prefix') or '').strip(),
                 attendance_points=float(request.POST.get('attendance_points') or 1.0),
@@ -3998,6 +4168,7 @@ def teacher_attendance_view(request):
             sess = get_object_or_404(AttendanceSession, pk=request.POST.get('session_id'))
             sess.is_open = not sess.is_open
             if sess.is_open:
+                AttendanceSession.objects.filter(classroom=sess.classroom, is_open=True).exclude(pk=sess.pk).update(is_open=False)
                 sess.opened_at = timezone.now()
                 sess.auto_close_minutes = int(sess.auto_close_minutes or 25)
                 sess.save(update_fields=['is_open', 'opened_at', 'auto_close_minutes'])
@@ -4006,6 +4177,61 @@ def teacher_attendance_view(request):
                 sess.save(update_fields=['is_open'])
                 messages.info(request, f'ปิดเช็คชื่อห้อง {sess.classroom.name} เรียบร้อยแล้ว')
             return redirect(f'/teacher/attendance/?session_id={sess.id}')
+        elif action == 'summarize_session':
+            cur_yr_post = get_current_academic_year()
+            raw_sess_id = (request.POST.get('session_id') or '').strip()
+            sess = (
+                AttendanceSession.objects.select_related('classroom').filter(pk=int(raw_sess_id)).first()
+                if raw_sess_id.isdigit() else None
+            )
+            room = sess.classroom if sess else get_object_or_404(Classroom, pk=request.POST.get('classroom_id'))
+            if sess is None:
+                sess = (
+                    AttendanceSession.objects.filter(academic_year=cur_yr_post, classroom=room, is_open=True)
+                    .order_by('-opened_at', '-created_at', '-id')
+                    .first()
+                )
+            if sess is None:
+                recent_sess = _find_recent_reopenable_session(room, check_date=check_date, cur_yr=cur_yr_post)
+                has_unsummarized = StudentMaterialCheck.objects.filter(
+                    academic_year=cur_yr_post, classroom=room, check_date=check_date,
+                    session__isnull=True, is_summarized=False,
+                ).exists()
+                if recent_sess is not None:
+                    if not has_unsummarized:
+                        d_str, t_str = _fmt_thai_be_date_time(
+                            recent_sess.summarized_at or recent_sess.opened_at or recent_sess.created_at
+                        )
+                        messages.info(
+                            request,
+                            f'ห้อง {room.name} เช็คชื่อไปแล้วเมื่อ {d_str} {t_str} (ยังไม่เกิน 40 นาที) '
+                            f'ระบบจึงเปิดประวัติเดิมขึ้นมาแก้ไข/ปรับปรุง'
+                        )
+                        return redirect(f'/teacher/attendance/?session_id={recent_sess.id}&check_date={check_date_str}')
+                    sess = recent_sess
+                else:
+                    sess = AttendanceSession.objects.create(
+                        classroom=room,
+                        title=f'คาบเรียน {room.name}',
+                        academic_year=cur_yr_post,
+                        check_in_code=f'DS{random.randint(1000, 9999)}',
+                        attendance_points=1.0,
+                        is_open=False,
+                        created_by=request.user,
+                    )
+
+            _sync_and_summarize_attendance_session(room, sess, check_date=check_date, user=request.user, finalize=True)
+            d_str, t_str = _fmt_thai_be_date_time(sess.summarized_at or sess.created_at)
+            messages.success(
+                request,
+                f'สรุปการเช็คชื่อ {room.name} ({d_str} {t_str}) '
+                f'[{sess.registered_count_snapshot}] [{sess.absent_count_snapshot}] [{sess.total_students_snapshot}] '
+                f'และรีเซ็ตหน้าจอกลับเป็นค่าเริ่มต้นเรียบร้อยแล้ว'
+            )
+            redir_params = f'?classroom_id={room.id}'
+            if check_date_str:
+                redir_params += f'&check_date={check_date_str}'
+            return redirect(f'/teacher/attendance/{redir_params}')
         elif action == 'assign_classroom_lab_room':
             room = get_object_or_404(Classroom, pk=request.POST.get('classroom_id'))
             lab = get_object_or_404(LabRoomLayout, pk=request.POST.get('lab_room_id'))
@@ -4467,11 +4693,17 @@ def teacher_attendance_view(request):
             return redirect(f'/teacher/attendance/?session_id={sess.id}')
 
     cur_yr = get_current_academic_year()
-    sessions = AttendanceSession.objects.filter(academic_year=cur_yr).select_related('classroom').all()
+    sessions = (
+        AttendanceSession.objects.filter(academic_year=cur_yr)
+        .select_related('classroom')
+        .annotate(present_count=Count('records', filter=~Q(records__status=AttendanceRecord.STATUS_ABSENT)))
+        .order_by('-summarized_at', '-created_at', '-id')
+    )
+    open_sessions = sessions.filter(is_open=True)
     sel_id = request.GET.get('session_id')
     sel_cid = request.GET.get('classroom_id')
     current_session = sessions.filter(pk=sel_id).first() if sel_id else (
-        sessions.filter(classroom_id=sel_cid).first() if sel_cid else sessions.first()
+        open_sessions.filter(classroom_id=sel_cid).first() if sel_cid else open_sessions.first()
     )
     edit_classroom = (
         Classroom.objects.select_related('lab_room').filter(pk=sel_cid).first() if sel_cid
@@ -4479,11 +4711,42 @@ def teacher_attendance_view(request):
     )
 
     all_student_nos_by_room = {}
+    room_totals_by_code = {}
     for r_code, c_no in (
-        get_active_students_qs(cur_yr, class_number__gt=0)
+        get_active_students_qs(cur_yr)
         .values_list('room_code', 'class_number')
     ):
-        all_student_nos_by_room.setdefault(r_code, set()).add(int(c_no))
+        room_totals_by_code[r_code] = room_totals_by_code.get(r_code, 0) + 1
+        if c_no and int(c_no) > 0:
+            all_student_nos_by_room.setdefault(r_code, set()).add(int(c_no))
+
+    history_rows = []
+    for s in sessions:
+        ref_dt = s.summarized_at or s.opened_at or s.created_at
+        d_be, t_hms = _fmt_thai_be_date_time(ref_dt)
+        loc_ref = timezone.localtime(ref_dt) if (ref_dt and timezone.is_aware(ref_dt)) else (ref_dt or timezone.now())
+        total_cnt = (
+            s.total_students_snapshot
+            if (s.is_summarized and s.total_students_snapshot > 0)
+            else room_totals_by_code.get(s.classroom.code, 0)
+        )
+        reg_cnt = int(getattr(s, 'present_count', 0) or 0)
+        abs_cnt = max(0, total_cnt - reg_cnt)
+        history_rows.append({
+            'id': s.id,
+            'classroom_id': s.classroom_id,
+            'classroom_name': s.classroom.name,
+            'title': s.title,
+            'check_in_code': s.check_in_code,
+            'date_be': d_be,
+            'time_hms': t_hms,
+            'check_date_iso': loc_ref.date().isoformat(),
+            'registered_count': reg_cnt,
+            'absent_count': abs_cnt,
+            'total_count': total_cnt,
+            'is_open': s.is_open,
+            'is_summarized': s.is_summarized,
+        })
 
     classrooms_list = list(classrooms)
     classroom_status_map = {}
@@ -4553,7 +4816,7 @@ def teacher_attendance_view(request):
         ld_dir = edit_classroom.get_layout_dict().get('auto_direction', 'col_front_to_back')
         auto_direction = ld_dir if ld_dir in VALID_AUTO_SEAT_DIRECTIONS else 'col_front_to_back'
     if current_session and edit_classroom and current_session.classroom_id == edit_classroom.id:
-        for r in current_session.records.select_related('student'):
+        for r in current_session.records.exclude(status=AttendanceRecord.STATUS_ABSENT).select_related('student'):
             seat_map[f'{r.seat_row}_{r.seat_col}'] = r
 
     lab_rows_range = list(range(6, 0, -1))
@@ -4597,6 +4860,7 @@ def teacher_attendance_view(request):
         'lab_linked_classrooms': lab_linked_classrooms,
         'has_custom_seat_override': has_custom_seat_override,
         'sessions': sessions,
+        'history_rows': history_rows,
         'current_session': current_session,
         'current_session_remaining_seconds': (
             current_session.remaining_seconds
@@ -4650,21 +4914,39 @@ def api_classroom_seat_check(request, classroom_id):
     """ผู้ดูแลคลิกที่ตำแหน่งที่นั่ง (หรือรายชื่อนักเรียนที่ Login) เพื่อเช็คหนังสือ/สมุดและเพิ่มคะแนนอัตโนมัติ"""
     classroom = get_object_or_404(Classroom, pk=classroom_id)
     check_date = _parse_check_date(request.POST.get('check_date'))
-    sess_id = request.POST.get('session_id')
-    current_session = AttendanceSession.objects.filter(pk=sess_id, classroom=classroom).first() if sess_id else None
+    cur_yr = get_current_academic_year()
+    sess_id = (request.POST.get('session_id') or '').strip()
+    reopened_history = False
+    current_session = (
+        AttendanceSession.objects.filter(pk=int(sess_id), classroom=classroom).first()
+        if sess_id.isdigit() else None
+    )
+    if current_session is None:
+        current_session = AttendanceSession.objects.filter(
+            academic_year=cur_yr, classroom=classroom, is_open=True
+        ).first()
+    if current_session is None:
+        recent_sess = _find_recent_reopenable_session(classroom, check_date=check_date, cur_yr=cur_yr)
+        if recent_sess is not None:
+            current_session = recent_sess
+            reopened_history = True
 
     seat_row = int(request.POST.get('seat_row') or 0)
     seat_col = int(request.POST.get('seat_col') or 0)
     student_pk = request.POST.get('student_id')
 
     student = None
-    cur_yr = get_current_academic_year()
     if student_pk and str(student_pk).isdigit():
         student = User.objects.filter(pk=int(student_pk), role=User.ROLE_STUDENT, is_active=True).first()
 
     if not student and seat_row and seat_col:
         if current_session:
-            rec = AttendanceRecord.objects.filter(session=current_session, seat_row=seat_row, seat_col=seat_col).select_related('student').first()
+            rec = (
+                AttendanceRecord.objects.filter(session=current_session, seat_row=seat_row, seat_col=seat_col)
+                .exclude(status=AttendanceRecord.STATUS_ABSENT)
+                .select_related('student')
+                .first()
+            )
             if rec:
                 student = rec.student
         if not student:
@@ -4688,20 +4970,66 @@ def api_classroom_seat_check(request, classroom_id):
         if 'has_notebook' in request.POST:
             has_notebook_arg = request.POST.get('has_notebook') in ('1', 'true', 'True', 'yes')
 
+    status_msg = ''
     try:
-        chk = toggle_student_material_check(
-            classroom=classroom,
-            student=student,
-            check_type=check_type,
-            teacher_user=request.user,
-            check_date=check_date,
-            seat_row=seat_row,
-            seat_col=seat_col,
-            session=current_session,
-            has_book=has_book_arg,
-            has_notebook=has_notebook_arg,
-            note=note,
-        )
+        if check_type in ('mark_present', 'mark_absent'):
+            if current_session is None:
+                current_session = AttendanceSession.objects.create(
+                    classroom=classroom,
+                    title=f'คาบเรียน {classroom.name}',
+                    academic_year=cur_yr,
+                    check_in_code=f'DS{random.randint(1000, 9999)}',
+                    attendance_points=1.0,
+                    is_open=False,
+                    created_by=request.user,
+                )
+            assigned_rc = classroom.get_seat_for_class_number(student.class_number)
+            sr = seat_row or (assigned_rc[0] if assigned_rc else 1)
+            sc = seat_col or (assigned_rc[1] if assigned_rc else 1)
+            desired_status = (
+                AttendanceRecord.STATUS_PRESENT if check_type == 'mark_present' else AttendanceRecord.STATUS_ABSENT
+            )
+            AttendanceRecord.objects.update_or_create(
+                session=current_session,
+                student=student,
+                defaults={'seat_row': sr, 'seat_col': sc, 'status': desired_status},
+            )
+            _sync_and_summarize_attendance_session(
+                classroom, current_session, check_date=check_date, user=request.user, finalize=False
+            )
+            chk = (
+                StudentMaterialCheck.objects.filter(classroom=classroom, student=student, session=current_session)
+                .order_by('-id')
+                .first()
+            )
+            status_msg = f'อัปเดตสถานะการเข้าเรียนของ {student.get_full_name()} เป็น "{"มาเรียน" if check_type == "mark_present" else "ขาดเรียน"}" แล้ว'
+        else:
+            chk = toggle_student_material_check(
+                classroom=classroom,
+                student=student,
+                check_type=check_type,
+                teacher_user=request.user,
+                check_date=check_date,
+                seat_row=seat_row,
+                seat_col=seat_col,
+                session=current_session,
+                has_book=has_book_arg,
+                has_notebook=has_notebook_arg,
+                note=note,
+            )
+            if current_session is not None and current_session.is_summarized:
+                if chk.has_book or chk.has_notebook:
+                    assigned_rc = classroom.get_seat_for_class_number(student.class_number)
+                    sr = seat_row or (assigned_rc[0] if assigned_rc else 1)
+                    sc = seat_col or (assigned_rc[1] if assigned_rc else 1)
+                    AttendanceRecord.objects.update_or_create(
+                        session=current_session,
+                        student=student,
+                        defaults={'seat_row': sr, 'seat_col': sc, 'status': AttendanceRecord.STATUS_PRESENT},
+                    )
+                _sync_and_summarize_attendance_session(
+                    classroom, current_session, check_date=check_date, user=request.user, finalize=False
+                )
 
         extra_rule_id = request.POST.get('extra_rule_id')
         extra_msg = ''
@@ -4711,7 +5039,7 @@ def api_classroom_seat_check(request, classroom_id):
                 ScoreLog.objects.create(
                     student=student,
                     rule=rule,
-                    academic_year=get_current_academic_year(),
+                    academic_year=cur_yr,
                     points=rule.signed_points,
                     reason=f'{rule.name} (ให้จากแผนผังที่นั่ง {classroom.name})',
                     source_module='manual',
@@ -4723,20 +5051,33 @@ def api_classroom_seat_check(request, classroom_id):
 
     student.refresh_from_db()
     snapshot = _build_classroom_seating_snapshot(classroom, current_session, check_date)
+    has_book_val = bool(chk.has_book) if chk else False
+    has_nb_val = bool(chk.has_notebook) if chk else False
+    note_val = (chk.note if chk else '')
+    reopen_prefix = 'เปิดประวัติเดิมขึ้นมาแก้ไข (ยังไม่เกิน 40 นาที): ' if reopened_history else ''
+    final_msg = status_msg or (
+        f'{reopen_prefix}อัปเดตสถานะของ {student.get_full_name()} '
+        f'(หนังสือ: {"✓" if has_book_val else "✕"} · สมุด: {"✓" if has_nb_val else "✕"}){extra_msg} '
+        f'(คะแนนรวม {student.total_score:.1f})'
+    )
     return JsonResponse({
         'ok': True,
+        'active_session_id': current_session.id if current_session else None,
+        'reopened_history': reopened_history,
         'student_id': student.id,
         'student_code': student.student_id or student.username,
         'student_name': student.get_full_name(),
         'class_number': student.class_number,
-        'has_book': chk.has_book,
-        'has_notebook': chk.has_notebook,
-        'note': chk.note,
+        'has_book': has_book_val,
+        'has_notebook': has_nb_val,
+        'note': note_val,
         'total_score': round(float(student.total_score or 0.0), 2),
         'summary': snapshot['summary'],
         'seats': snapshot['seats'],
         'online_students': snapshot['online_students'],
-        'message': f'อัปเดตสถานะของ {student.get_full_name()} (หนังสือ: {"✓" if chk.has_book else "✕"} · สมุด: {"✓" if chk.has_notebook else "✕"}){extra_msg} (คะแนนรวม {student.total_score:.1f})',
+        'absent_students': snapshot['absent_students'],
+        'registered_students': snapshot['registered_students'],
+        'message': final_msg,
     })
 
 

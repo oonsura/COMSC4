@@ -1093,6 +1093,11 @@ class AttendanceSession(models.Model):
     is_open = models.BooleanField('เปิดให้เช็คชื่ออยู่', default=True)
     opened_at = models.DateTimeField('เวลาที่เปิดเช็คชื่อล่าสุด', null=True, blank=True)
     auto_close_minutes = models.PositiveSmallIntegerField('ปิดอัตโนมัติ (นาที)', default=25)
+    is_summarized = models.BooleanField('สรุปการเช็คชื่อแล้ว', default=False, db_index=True)
+    summarized_at = models.DateTimeField('เวลาที่สรุปการเช็คชื่อ', null=True, blank=True)
+    registered_count_snapshot = models.PositiveSmallIntegerField('จำนวนคนลงทะเบียนตอนสรุป', default=0)
+    absent_count_snapshot = models.PositiveSmallIntegerField('จำนวนคนขาดตอนสรุป', default=0)
+    total_students_snapshot = models.PositiveSmallIntegerField('จำนวนคนทั้งหมดตอนสรุป', default=0)
     academic_year = models.CharField('ปีการศึกษา', max_length=20, default='2569', db_index=True)
     created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1154,6 +1159,7 @@ class StudentMaterialCheck(models.Model):
     academic_year = models.CharField('ปีการศึกษา', max_length=20, default='2569', db_index=True)
     check_date = models.DateField('วันที่เช็ค', default=timezone.localdate, db_index=True)
     session = models.ForeignKey(AttendanceSession, null=True, blank=True, on_delete=models.SET_NULL, related_name='material_checks')
+    is_summarized = models.BooleanField('สรุปการเช็คแล้ว', default=False, db_index=True)
     seat_row = models.PositiveSmallIntegerField('แถวที่นั่ง', default=0)
     seat_col = models.PositiveSmallIntegerField('คอลัมน์ที่นั่ง', default=0)
     has_book = models.BooleanField('นำหนังสือมา', default=False)
@@ -1166,7 +1172,6 @@ class StudentMaterialCheck(models.Model):
 
     class Meta:
         db_table = 'student_material_checks'
-        unique_together = [('classroom', 'student', 'check_date')]
         ordering = ['-check_date', 'student__class_number']
 
     def __str__(self):
